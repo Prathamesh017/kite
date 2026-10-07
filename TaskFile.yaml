@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+vars:
+  GREETING: Welcome to the KI . A Minimal Coding Agent!
+
+tasks:
+  default:
+    desc: Print a greeting message
+    cmds:
+      - echo "{{.GREETING}}"
+    silent: true
+  run:
+     desc: Run the KI Agent
+     cmds:  
+       - go run ./cmd/main.go
+     silent: true
