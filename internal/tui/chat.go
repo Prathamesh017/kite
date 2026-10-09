@@ -49,6 +49,13 @@ func (c *Chat) Show(text string) {
 	c.output = text
 }
 
+// Restore puts a failed question back in the input, with the reason above it.
+func (c *Chat) Restore(question, reason string) {
+	c.busy = false
+	c.input = question
+	c.output = reason
+}
+
 func (c Chat) View(width, height int) string {
 	textW, textH := textSize(width, height)
 

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -78,35 +77,32 @@ func (c Client) Complete(ctx context.Context, history []Message) (string, error)
 
 	res, err := c.http.Do(req)
 	if err != nil {
-		return "", err
+		return "", &APIError{}
 	}
 	defer res.Body.Close()
 
 	raw, err := io.ReadAll(res.Body)
 	if err != nil {
-		return "", err
+		return "", &APIError{}
 	}
 	return readReply(res.StatusCode, raw)
 }
 
 // readReply pulls the assistant text out of a chat-completions body.
-// An API error becomes a Go error so the chat can show the message.
+// Any failure comes back as an *APIError carrying the status code.
 func readReply(status int, body []byte) (string, error) {
 	var resp response
 	if err := json.Unmarshal(body, &resp); err != nil {
-		if status < 200 || status >= 300 {
-			return "", fmt.Errorf("model returned %d", status)
-		}
-		return "", fmt.Errorf("read model response: %w", err)
+		return "", &APIError{Status: status}
 	}
 	if resp.Error.Message != "" {
-		return "", errors.New(resp.Error.Message)
+		return "", &APIError{Status: status, Message: resp.Error.Message}
 	}
 	if status < 200 || status >= 300 {
-		return "", fmt.Errorf("model returned %d", status)
+		return "", &APIError{Status: status}
 	}
 	if len(resp.Choices) == 0 || strings.TrimSpace(resp.Choices[0].Message.Content) == "" {
-		return "", errors.New("model returned an empty reply")
+		return "", &APIError{Status: status, Message: "model returned an empty reply"}
 	}
 	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
 }

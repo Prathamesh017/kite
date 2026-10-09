@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -78,13 +79,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 	case replyMsg:
-		if msg.err != nil {
-			m.activity.StopThinking()
-			m.chat.Show(msg.err.Error())
+		if msg.err == nil {
+			m.activity.AppendAnswer(msg.response)
+			m.chat.Show("")
 			return m, nil
 		}
-		m.activity.AppendAnswer(msg.response)
-		m.chat.Show("")
+		// The first failure comes back here so the pane can switch to retrying.
+		// Later retries run inside retry() and only report the final result.
+		retryConfig := llm.RetryConfigFromEnv()
+		if !msg.final && llm.Retryable(msg.err) && retryConfig.Count > 0 {
+			m.activity.Retrying()
+			return m, retry(m.activity.conversions, retryConfig)
+		}
+		question := m.activity.RemoveQuestion()
+		m.chat.Restore(question, failText(msg.err))
+	case tea.MouseMsg:
+		// The wheel only scrolls when the pointer is over the activity pane.
+		if !m.overActivity(msg.X, msg.Y) {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.scrollActivity(-wheelStep)
+		case tea.MouseButtonWheelDown:
+			m.scrollActivity(wheelStep)
+		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -92,6 +111,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+t":
 			// ctrl+t, not t, so the letter can be typed into the chat.
 			m.setTheme((m.theme + 1) % len(themes))
+			return m, nil
+		case "up", "down":
+			delta := 1
+			if msg.String() == "up" {
+				delta = -1
+			}
+			m.scrollActivity(delta)
 			return m, nil
 		}
 		// HandleKey returns the question only on Enter. Other keys just edit the input.
@@ -104,9 +130,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // replyMsg is the model's answer. The question is already in the activity list.
+// final marks the result of the retries, so it is not retried again.
 type replyMsg struct {
 	response string
 	err      error
+	final    bool
 }
 
 // ask sends the conversation, which already ends with the question just asked.
@@ -116,7 +144,7 @@ func ask(conversions []llm.Message) tea.Cmd {
 	return func() tea.Msg {
 		client, err := llm.FromEnv()
 		if err != nil {
-			return replyMsg{err: err}
+			return replyMsg{err: err, final: true}
 		}
 		response, err := client.Complete(context.Background(), sent)
 		if err != nil {
@@ -124,6 +152,48 @@ func ask(conversions []llm.Message) tea.Cmd {
 		}
 		return replyMsg{response: response}
 	}
+}
+
+// retry sends the same conversation up to settings.Count more times. Before each
+// try it waits a random time up to the backoff cap. It stops early when an error
+// cannot be retried.
+func retry(conversions []llm.Message, retryConfig llm.Retry) tea.Cmd {
+	sent := append([]llm.Message(nil), conversions...)
+	return func() tea.Msg {
+		client, err := llm.FromEnv()
+		if err != nil {
+			return replyMsg{err: err, final: true}
+		}
+		for attempt := 0; attempt < retryConfig.Count; attempt++ {
+			time.Sleep(llm.RandomUpTo(llm.Backoff(attempt, retryConfig)))
+
+			response, err := client.Complete(context.Background(), sent)
+			//if the response is successful, return the response
+			if err == nil {
+				return replyMsg{response: response, final: true}
+			}
+			//if the new eror is retryable, and we have atrtemo
+			if !llm.Retryable(err) || attempt == retryConfig.Count-1 {
+				return replyMsg{err: err, final: true}
+			}
+		}
+		return replyMsg{err: &llm.APIError{}, final: true}
+	}
+}
+
+// failText is what the chat shows when a request ends in failure.
+func failText(err error) string {
+	var apiErr *llm.APIError
+	if !errors.As(err, &apiErr) {
+		return err.Error()
+	}
+	if apiErr.Status == 0 {
+		return "something went wrong"
+	}
+	if apiErr.Message == "" {
+		return "something went wrong, try again"
+	}
+	return apiErr.Message
 }
 
 func (m Model) View() string {
@@ -143,6 +213,22 @@ func (m Model) View() string {
 	footer := m.chat.View(m.width, footerH)
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+}
+
+// wheelStep is how many rows one wheel notch scrolls the activity pane.
+const wheelStep = 3
+
+func (m *Model) scrollActivity(delta int) {
+	_, bodyH, _ := splitHeight(m.height)
+	leftW, _ := splitWidth(m.width)
+	m.activity.Scroll(delta, leftW, bodyH)
+}
+
+// overActivity reports whether a mouse position falls inside the activity pane.
+func (m Model) overActivity(x, y int) bool {
+	headerH, bodyH, _ := splitHeight(m.height)
+	leftW, _ := splitWidth(m.width)
+	return x < leftW && y >= headerH && y < headerH+bodyH
 }
 
 // splitHeight gives the header a fixed bar, the chat about a third of what

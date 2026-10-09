@@ -15,7 +15,8 @@ func main() {
 	loadEnv(".env")
 
 	// The alt screen lets the layout own the whole terminal.
-	p := tea.NewProgram(tui.New(), tea.WithAltScreen())
+	// Mouse events are on for the wheel. Selecting text then needs Option+drag on macOS.
+	p := tea.NewProgram(tui.New(), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "kite: %v\n", err)
 		os.Exit(1)
