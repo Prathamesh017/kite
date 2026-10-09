@@ -12,8 +12,7 @@ const (
 )
 
 // Header is the top bar: the name and theme on the left, then the working
-// directory, version and status on the right. The (t) hint is the key that
-// switches themes.
+// directory, version and status on the right. ctrl+t switches themes.
 type Header struct {
 	cwd   string
 	theme string
@@ -21,7 +20,7 @@ type Header struct {
 
 func (h Header) View(width, height int) string {
 	const sep = "  "
-	left := brandStyle.Render("KITE") + sep + mutedStyle.Render(h.theme+" (t)")
+	left := brandStyle.Render("KITE") + sep + mutedStyle.Render(h.theme+"  ctrl+t")
 	meta := versionStyle.Render(version) + sep +
 		readyStyle.Render("●") + " " + statusStyle.Render(status)
 

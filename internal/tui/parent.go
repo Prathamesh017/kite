@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"context"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"kite/internal/llm"
 )
 
 const (
@@ -56,16 +60,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case replyMsg:
+		if msg.err != nil {
+			m.chat.Show(msg.err.Error())
+			return m, nil
+		}
+		m.chat.Show(msg.text)
 	case tea.KeyMsg:
-		// The chat and the terminal do not take keys yet, so single letters are free.
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "ctrl+c":
 			return m, tea.Quit
-		case "t":
+		case "ctrl+t":
+			// ctrl+t, not t, so the letter can be typed into the chat.
 			m.setTheme((m.theme + 1) % len(themes))
+			return m, nil
+		}
+		// HandleKey returns the question only on Enter. Other keys just edit the input.
+		if question := m.chat.HandleKey(msg); question != "" {
+			return m, ask(question)
 		}
 	}
 	return m, nil
+}
+
+// replyMsg is the model's answer, or the error text to show in the chat.
+type replyMsg struct {
+	text string
+	err  error
+}
+
+// ask sends this one question. The system prompt is added inside the client.
+func ask(question string) tea.Cmd {
+	return func() tea.Msg {
+		client, err := llm.FromEnv()
+		if err != nil {
+			return replyMsg{err: err}
+		}
+		text, err := client.Complete(context.Background(), []llm.Message{
+			{Role: "user", Content: question},
+		})
+		if err != nil {
+			return replyMsg{err: err}
+		}
+		return replyMsg{text: text}
+	}
 }
 
 func (m Model) View() string {

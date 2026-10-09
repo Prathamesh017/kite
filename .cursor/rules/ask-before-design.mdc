@@ -1,0 +1,28 @@
+---
+description: Ask before any design decision so the author can make the LLD call
+alwaysApply: true
+---
+
+# Ask before designing
+
+The author is practicing low-level design. Do not choose structure for them.
+
+Before adding or changing any of these, stop and ask:
+
+- A new type, field, or function whose job is a design choice
+- Where state lives, and what is stored versus derived
+- How two parts talk (chat to parent, parent to the model client)
+- What a user action does after the input is captured
+
+Ask one or two questions. Give a short recommendation and why, then wait. Implement only the option they pick.
+
+Proceed without asking for a bugfix, a rename they already named, or a change they specified step by step.
+
+```go
+// Bad: inventing a second model of the same conversation
+type shown struct { role, text string; fail bool }
+type History struct { Role, Text string }
+
+// Good: they said "keep input and the model call; we will design the list"
+// so the code only stores input and the last reply until they decide.
+```
