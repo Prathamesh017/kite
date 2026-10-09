@@ -1,7 +1,17 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	tea "github.com/charmbracelet/bubbletea"
+	"kite/internal/tui"
+)
 
 func main() {
-	fmt.Println("Welcome to the KI Agent! A Minimal Coding Agent!")
+	// The alt screen lets the layout own the whole terminal.
+	p := tea.NewProgram(tui.New(), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "kite: %v\n", err)
+		os.Exit(1)
+	}
 }
