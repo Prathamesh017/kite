@@ -9,9 +9,10 @@ import (
 
 // Chat is the footer. input is what the user is typing. output is the last reply.
 type Chat struct {
-	input  string
-	output string
-	busy   bool
+	input    string
+	output   string
+	busy     bool
+	cursorOn bool
 }
 
 // HandleKey edits the input. Enter returns the question and clears the line.
@@ -51,11 +52,15 @@ func (c *Chat) Show(text string) {
 func (c Chat) View(width, height int) string {
 	textW, textH := textSize(width, height)
 
-	input := mutedStyle.Render("> Ask KITE anything...")
-	if c.busy {
-		input = mutedStyle.Render("thinking...")
-	} else if c.input != "" {
-		input = "> " + c.input
+	// The bar sits where the next character will go. Typing is always at the end.
+	// A space keeps the line from shifting when the bar blinks off.
+	cursor := " "
+	if c.cursorOn {
+		cursor = titleStyle.Render("|")
+	}
+	input := "> " + cursor + mutedStyle.Render(" Ask KITE anything...")
+	if c.input != "" {
+		input = "> " + c.input + cursor
 	}
 
 	room := textH - 2

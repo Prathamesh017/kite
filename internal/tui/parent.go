@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -40,7 +41,10 @@ type Model struct {
 }
 
 func New() Model {
-	m := Model{header: Header{cwd: workingDir()}}
+	m := Model{
+		header: Header{cwd: workingDir()},
+		chat:   Chat{cursorOn: true},
+	}
 	m.setTheme(0)
 	return m
 }
@@ -52,20 +56,35 @@ func (m *Model) setTheme(i int) {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return tickCursor()
+}
+
+// cursorTickMsg flips the chat bar. View only runs again when a message arrives,
+// so the bar needs a timer to blink.
+type cursorTickMsg struct{}
+
+func tickCursor() tea.Cmd {
+	return tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+		return cursorTickMsg{}
+	})
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case cursorTickMsg:
+		m.chat.cursorOn = !m.chat.cursorOn
+		return m, tickCursor()
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 	case replyMsg:
 		if msg.err != nil {
+			m.activity.StopThinking()
 			m.chat.Show(msg.err.Error())
 			return m, nil
 		}
-		m.chat.Show(msg.text)
+		m.activity.AppendAnswer(msg.response)
+		m.chat.Show("")
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -77,32 +96,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// HandleKey returns the question only on Enter. Other keys just edit the input.
 		if question := m.chat.HandleKey(msg); question != "" {
-			return m, ask(question)
+			m.activity.AppendQuestion(question)
+			return m, ask(m.activity.conversions)
 		}
 	}
 	return m, nil
 }
 
-// replyMsg is the model's answer, or the error text to show in the chat.
+// replyMsg is the model's answer. The question is already in the activity list.
 type replyMsg struct {
-	text string
-	err  error
+	response string
+	err      error
 }
 
-// ask sends this one question. The system prompt is added inside the client.
-func ask(question string) tea.Cmd {
+// ask sends the conversation, which already ends with the question just asked.
+// The system prompt is added inside the client.
+func ask(conversions []llm.Message) tea.Cmd {
+	sent := append([]llm.Message(nil), conversions...)
 	return func() tea.Msg {
 		client, err := llm.FromEnv()
 		if err != nil {
 			return replyMsg{err: err}
 		}
-		text, err := client.Complete(context.Background(), []llm.Message{
-			{Role: "user", Content: question},
-		})
+		response, err := client.Complete(context.Background(), sent)
 		if err != nil {
 			return replyMsg{err: err}
 		}
-		return replyMsg{text: text}
+		return replyMsg{response: response}
 	}
 }
 

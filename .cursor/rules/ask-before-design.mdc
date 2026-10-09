@@ -14,7 +14,7 @@ Before adding or changing any of these, stop and ask:
 - How two parts talk (chat to parent, parent to the model client)
 - What a user action does after the input is captured
 
-Ask one or two questions. Give a short recommendation and why, then wait. Implement only the option they pick.
+Ask one or two questions, then wait. Implement only the option they pick. When they are picturing a flow, follow the picture-the-flow rule and leave the blanks empty.
 
 Proceed without asking for a bugfix, a rename they already named, or a change they specified step by step.
 
