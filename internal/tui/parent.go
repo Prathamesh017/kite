@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"kite/internal/llm"
+	"kite/internal/tools"
 )
 
 const (
@@ -39,6 +40,10 @@ type Model struct {
 	activity Activity
 	terminal Terminal
 	chat     Chat
+
+	// history is what the model is sent: questions, answers, and the tool
+	// requests and results in between. Activity only shows questions and answers.
+	history []llm.Message
 }
 
 func New() Model {
@@ -80,7 +85,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	case replyMsg:
 		if msg.err == nil {
+			// The tools already ran. Keep the request and the results for the
+			// model, and ask it again so it can use them.
+			if len(msg.toolCalls) > 0 {
+				for _, call := range msg.toolCalls {
+					m.activity.AppendToolCall(call.Function.Name)
+				}
+				m.history = append(m.history, llm.Message{Role: "assistant", Content: msg.response, ToolCalls: msg.toolCalls})
+				m.history = append(m.history, msg.toolResults...)
+				return m, ask(m.history)
+			}
 			m.activity.AppendAnswer(msg.response)
+			m.history = append(m.history, llm.Message{Role: "assistant", Content: msg.response})
 			m.chat.Show("")
 			return m, nil
 		}
@@ -89,9 +105,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		retryConfig := llm.RetryConfigFromEnv()
 		if !msg.final && llm.Retryable(msg.err) && retryConfig.Count > 0 {
 			m.activity.Retrying()
-			return m, retry(m.activity.conversions, retryConfig)
+			return m, retry(m.history, retryConfig)
 		}
 		question := m.activity.RemoveQuestion()
+		m.history = dropLastQuestion(m.history)
 		m.chat.Restore(question, failText(msg.err))
 	case tea.MouseMsg:
 		// The wheel only scrolls when the pointer is over the activity pane.
@@ -123,42 +140,75 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// HandleKey returns the question only on Enter. Other keys just edit the input.
 		if question := m.chat.HandleKey(msg); question != "" {
 			m.activity.AppendQuestion(question)
-			return m, ask(m.activity.conversions)
+			m.history = append(m.history, llm.Message{Role: "user", Content: question})
+			return m, ask(m.history)
 		}
 	}
 	return m, nil
 }
 
-// replyMsg is the model's answer. The question is already in the activity list.
+// replyMsg is the model's answer, or the tools it asked for along with their
+// results, one per call. The question is already in the activity list.
 // final marks the result of the retries, so it is not retried again.
 type replyMsg struct {
-	response string
-	err      error
-	final    bool
+	response    string
+	toolCalls   []llm.ToolCall
+	toolResults []llm.Message
+	err         error
+	final       bool
 }
 
-// ask sends the conversation, which already ends with the question just asked.
-// The system prompt is added inside the client.
-func ask(conversions []llm.Message) tea.Cmd {
-	sent := append([]llm.Message(nil), conversions...)
+// ask sends the history, which ends with the question just asked or with tool
+// results. The system prompt is added inside the client.
+func ask(history []llm.Message) tea.Cmd {
+	sent := append([]llm.Message(nil), history...)
 	return func() tea.Msg {
 		client, err := llm.FromEnv()
 		if err != nil {
 			return replyMsg{err: err, final: true}
 		}
-		response, err := client.Complete(context.Background(), sent)
+		response, finish, calls, err := client.Complete(context.Background(), sent)
 		if err != nil {
 			return replyMsg{err: err}
 		}
-		return replyMsg{response: response}
+		return handleReply(response, finish, calls)
 	}
 }
 
-// retry sends the same conversation up to settings.Count more times. Before each
+// handleReply checks why the model stopped. "tool_calls" means it wants tools
+// run, so each one is looked up by name in the registry and called. Every call
+// gets a result carrying its ID, because the model expects one answer per request.
+func handleReply(response, finish string, calls []llm.ToolCall) replyMsg {
+	if finish != "tool_calls" {
+		return replyMsg{response: response}
+	}
+	results := make([]llm.Message, 0, len(calls))
+	for _, call := range calls {
+		result := "error: unknown tool " + call.Function.Name
+		if run, ok := tools.Registry[call.Function.Name]; ok {
+			result = run(call.Function.Arguments)
+		}
+		results = append(results, llm.Message{Role: "tool", Content: result, ToolCallID: call.ID})
+	}
+	return replyMsg{response: response, toolCalls: calls, toolResults: results}
+}
+
+// dropLastQuestion removes the last question and any tool steps after it,
+// so a failed run leaves no trace in what the model is sent next time.
+func dropLastQuestion(history []llm.Message) []llm.Message {
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			return history[:i]
+		}
+	}
+	return history
+}
+
+// retry sends the same history up to settings.Count more times. Before each
 // try it waits a random time up to the backoff cap. It stops early when an error
 // cannot be retried.
-func retry(conversions []llm.Message, retryConfig llm.Retry) tea.Cmd {
-	sent := append([]llm.Message(nil), conversions...)
+func retry(history []llm.Message, retryConfig llm.Retry) tea.Cmd {
+	sent := append([]llm.Message(nil), history...)
 	return func() tea.Msg {
 		client, err := llm.FromEnv()
 		if err != nil {
@@ -167,10 +217,12 @@ func retry(conversions []llm.Message, retryConfig llm.Retry) tea.Cmd {
 		for attempt := 0; attempt < retryConfig.Count; attempt++ {
 			time.Sleep(llm.RandomUpTo(llm.Backoff(attempt, retryConfig)))
 
-			response, err := client.Complete(context.Background(), sent)
+			response, finish, calls, err := client.Complete(context.Background(), sent)
 			//if the response is successful, return the response
 			if err == nil {
-				return replyMsg{response: response, final: true}
+				reply := handleReply(response, finish, calls)
+				reply.final = true
+				return reply
 			}
 			//if the new eror is retryable, and we have atrtemo
 			if !llm.Retryable(err) || attempt == retryConfig.Count-1 {
@@ -191,7 +243,7 @@ func failText(err error) string {
 		return "something went wrong"
 	}
 	if apiErr.Message == "" {
-		return "something went wrong, try again"
+		return "something went wrong, try again " + string(err.Error())
 	}
 	return apiErr.Message
 }

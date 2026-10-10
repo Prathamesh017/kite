@@ -28,6 +28,12 @@ func (a *Activity) AppendQuestion(question string) {
 	a.retrying = false
 }
 
+// AppendToolCall shows that a tool ran. It is only for display; the model's
+// copy of the tool steps lives in the parent's history.
+func (a *Activity) AppendToolCall(name string) {
+	a.conversions = append(a.conversions, llm.Message{Role: "tool", Content: name})
+}
+
 func (a *Activity) AppendAnswer(answer string) {
 	a.conversions = append(a.conversions, llm.Message{Role: "assistant", Content: answer})
 	a.thinking = false
@@ -39,17 +45,19 @@ func (a *Activity) Retrying() {
 	a.retrying = true
 }
 
-// RemoveQuestion drops the unanswered question at the end and returns its text.
+// RemoveQuestion drops the unanswered question and any tool lines after it,
+// and returns the question's text.
 func (a *Activity) RemoveQuestion() string {
 	a.thinking = false
 	a.retrying = false
-	last := len(a.conversions) - 1
-	if last < 0 || a.conversions[last].Role != "user" {
-		return ""
+	for i := len(a.conversions) - 1; i >= 0; i-- {
+		if a.conversions[i].Role == "user" {
+			question := a.conversions[i].Content
+			a.conversions = a.conversions[:i]
+			return question
+		}
 	}
-	question := a.conversions[last].Content
-	a.conversions = a.conversions[:last]
-	return question
+	return ""
 }
 
 // Scroll moves the view by delta rows. Negative is up. width and height are the
@@ -92,6 +100,9 @@ func (a Activity) rows(width, height int) (rows []string, room int) {
 
 	for _, line := range a.conversions {
 		text := marker(line.Role) + "  " + line.Content
+		if line.Role == "tool" {
+			text = mutedStyle.Render("> using tool call - " + line.Content)
+		}
 		rendered := lipgloss.NewStyle().Width(textW).Render(text)
 		rows = append(rows, strings.Split(rendered, "\n")...)
 	}
