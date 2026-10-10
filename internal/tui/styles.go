@@ -19,7 +19,32 @@ var (
 	statusStyle  lipgloss.Style
 	titleStyle   lipgloss.Style
 	mutedStyle   lipgloss.Style
+	fillStyle    lipgloss.Style
 )
+
+// resetCode ends every styled span, and it clears the background too.
+const resetCode = "\x1b[0m"
+
+// fillScreen paints the theme background behind the whole frame.
+// The colour is turned back on after each reset so styled text does not
+// leave holes, and short lines are padded out to the full width.
+func fillScreen(view string, width int) string {
+	sample := fillStyle.Render(" ")
+	start := sample[:strings.Index(sample, " ")]
+	if start == "" {
+		return view // the terminal has no colour support
+	}
+
+	lines := strings.Split(view, "\n")
+	for i, line := range lines {
+		line = strings.ReplaceAll(line, resetCode, resetCode+start)
+		if gap := width - lipgloss.Width(line); gap > 0 {
+			line += strings.Repeat(" ", gap)
+		}
+		lines[i] = start + line + resetCode
+	}
+	return strings.Join(lines, "\n")
+}
 
 // textSize is the room left for text once the border and padding are removed.
 func textSize(width, height int) (int, int) {

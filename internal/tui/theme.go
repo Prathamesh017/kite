@@ -10,6 +10,7 @@ type Theme struct {
 	Title  lipgloss.Color // pane titles and status text
 	Muted  lipgloss.Color // version, hints, placeholders
 	Ready  lipgloss.Color // the status dot
+	Fill   lipgloss.Color // screen background
 }
 
 // themes are cycled with the t key. The first one is used at startup.
@@ -21,6 +22,7 @@ var themes = []Theme{
 		Title:  "#E0F2FE",
 		Muted:  "#64748B",
 		Ready:  "#4ADE80",
+		Fill:   "#0B1A2B",
 	},
 	{
 		Name:   "Deep Ocean",
@@ -29,6 +31,7 @@ var themes = []Theme{
 		Title:  "#DBEAFE",
 		Muted:  "#475569",
 		Ready:  "#34D399",
+		Fill:   "#0A1428",
 	},
 	{
 		Name:   "Tokyo Night",
@@ -37,6 +40,7 @@ var themes = []Theme{
 		Title:  "#C0CAF5",
 		Muted:  "#565F89",
 		Ready:  "#9ECE6A",
+		Fill:   "#1A1B26",
 	},
 	{
 		Name:   "Nord Frost",
@@ -45,6 +49,7 @@ var themes = []Theme{
 		Title:  "#ECEFF4",
 		Muted:  "#616E88",
 		Ready:  "#A3BE8C",
+		Fill:   "#2E3440",
 	},
 	{
 		Name:   "Catppuccin",
@@ -53,6 +58,7 @@ var themes = []Theme{
 		Title:  "#CDD6F4",
 		Muted:  "#6C7086",
 		Ready:  "#A6E3A1",
+		Fill:   "#1E1E2E",
 	},
 	{
 		Name:   "One Dark",
@@ -61,6 +67,7 @@ var themes = []Theme{
 		Title:  "#ABB2BF",
 		Muted:  "#5C6370",
 		Ready:  "#98C379",
+		Fill:   "#282C34",
 	},
 	{
 		Name:   "GitHub Dark",
@@ -69,6 +76,7 @@ var themes = []Theme{
 		Title:  "#E6EDF3",
 		Muted:  "#7D8590",
 		Ready:  "#3FB950",
+		Fill:   "#0D1117",
 	},
 	{
 		Name:   "Solarized",
@@ -77,6 +85,7 @@ var themes = []Theme{
 		Title:  "#93A1A1",
 		Muted:  "#586E75",
 		Ready:  "#859900",
+		Fill:   "#002B36",
 	},
 }
 
@@ -84,6 +93,7 @@ var themes = []Theme{
 // every render, so the next frame picks up the new colors.
 func applyTheme(t Theme) {
 	panelStyle = panelStyle.BorderForeground(t.Border)
+	fillStyle = lipgloss.NewStyle().Background(t.Fill)
 	brandStyle = lipgloss.NewStyle().Foreground(t.Brand).Bold(true)
 	versionStyle = lipgloss.NewStyle().Foreground(t.Muted)
 	readyStyle = lipgloss.NewStyle().Foreground(t.Ready)

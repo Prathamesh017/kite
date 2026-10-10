@@ -203,16 +203,13 @@ func (m Model) View() string {
 	}
 
 	headerH, bodyH, footerH := splitHeight(m.height)
-	leftW, rightW := splitWidth(m.width)
-
+	// The terminal pane is hidden for phase 1, so activity takes the full width.
+	// To bring it back: split with splitWidth and join m.terminal.View(rightW, bodyH).
 	header := m.header.View(m.width, headerH)
-	body := lipgloss.JoinHorizontal(lipgloss.Top,
-		m.activity.View(leftW, bodyH),
-		m.terminal.View(rightW, bodyH),
-	)
+	body := m.activity.View(m.width, bodyH)
 	footer := m.chat.View(m.width, footerH)
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	return fillScreen(lipgloss.JoinVertical(lipgloss.Left, header, body, footer), m.width)
 }
 
 // wheelStep is how many rows one wheel notch scrolls the activity pane.
@@ -220,15 +217,13 @@ const wheelStep = 3
 
 func (m *Model) scrollActivity(delta int) {
 	_, bodyH, _ := splitHeight(m.height)
-	leftW, _ := splitWidth(m.width)
-	m.activity.Scroll(delta, leftW, bodyH)
+	m.activity.Scroll(delta, m.width, bodyH)
 }
 
 // overActivity reports whether a mouse position falls inside the activity pane.
 func (m Model) overActivity(x, y int) bool {
 	headerH, bodyH, _ := splitHeight(m.height)
-	leftW, _ := splitWidth(m.width)
-	return x < leftW && y >= headerH && y < headerH+bodyH
+	return x < m.width && y >= headerH && y < headerH+bodyH
 }
 
 // splitHeight gives the header a fixed bar, the chat about a third of what
