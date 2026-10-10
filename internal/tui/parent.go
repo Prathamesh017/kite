@@ -238,6 +238,11 @@ func failOnPanic(step *string, msg *tea.Msg) {
 // step is updated before each tool, so a panic can name the tool that crashed.
 // If the reply asks for more tools than toolsLeft, none of them run.
 func handleReply(response, finish string, calls []llm.ToolCall, toolsLeft int, step *string) replyMsg {
+	// "length" means the model ran out of room mid-reply. Keep what it wrote,
+	// and say it was cut off so it is not mistaken for a full answer.
+	if finish == "length" {
+		return replyMsg{response: response + "\n\nThe reply was cut off because it hit the model's length limit."}
+	}
 	if finish != "tool_calls" {
 		return replyMsg{response: response}
 	}
