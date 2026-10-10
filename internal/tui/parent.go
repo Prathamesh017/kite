@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,6 +47,11 @@ type Model struct {
 	// history is what the model is sent: questions, answers, and the tool
 	// requests and results in between. Activity only shows questions and answers.
 	history []llm.Message
+
+	// iterations and toolCalls count the model replies and the tools run for
+	// the current question. Both go back to 0 when a new question is sent.
+	iterations int
+	toolCalls  int
 }
 
 func New() Model {
@@ -86,6 +93,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	case replyMsg:
 		if msg.err == nil {
+			m.iterations++
+			// The reply asked for more tools than are left, so none of them ran.
+			if msg.toolLimitHit {
+				m.stopIncomplete("Reached its tool-call limit. The task may be partially complete.")
+				return m, nil
+			}
 			// The tools already ran. Keep the request and the results for the
 			// model, and ask it again so it can use them.
 			if len(msg.toolCalls) > 0 {
@@ -94,7 +107,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.history = append(m.history, llm.Message{Role: "assistant", Content: msg.response, ToolCalls: msg.toolCalls})
 				m.history = append(m.history, msg.toolResults...)
-				return m, ask(m.history)
+				m.toolCalls += len(msg.toolCalls)
+				if m.iterations >= iterationLimit() {
+					m.stopIncomplete("Reached its execution-step limit before completing the task.")
+					return m, nil
+				}
+				return m, ask(m.history, toolCallLimit()-m.toolCalls)
 			}
 			m.activity.AppendAnswer(msg.response)
 			m.history = append(m.history, llm.Message{Role: "assistant", Content: msg.response})
@@ -106,7 +124,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		retryConfig := llm.RetryConfigFromEnv()
 		if !msg.final && llm.Retryable(msg.err) && retryConfig.Count > 0 {
 			m.activity.Retrying()
-			return m, retry(m.history, retryConfig)
+			return m, retry(m.history, retryConfig, toolCallLimit()-m.toolCalls)
 		}
 		question := m.activity.RemoveQuestion()
 		m.history = dropLastQuestion(m.history)
@@ -142,26 +160,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if question := m.chat.HandleKey(msg); question != "" {
 			m.activity.AppendQuestion(question)
 			m.history = append(m.history, llm.Message{Role: "user", Content: question})
-			return m, ask(m.history)
+			m.iterations, m.toolCalls = 0, 0
+			return m, ask(m.history, toolCallLimit())
 		}
 	}
 	return m, nil
 }
 
+// stopIncomplete ends the run when a limit is hit. It is not a failure: the
+// question and the tool steps stay, and the note takes the place of the answer,
+// in Activity and in the history the model sees next time.
+func (m *Model) stopIncomplete(note string) {
+	m.activity.AppendAnswer(note)
+	m.history = append(m.history, llm.Message{Role: "assistant", Content: note})
+	m.chat.Show("")
+}
+
+// iterationLimit and toolCallLimit read MAX_ITERATIONS and MAX_TOOL_CALLS, the
+// limits for one question. A missing or unreadable value falls back to 10 and 20.
+func iterationLimit() int { return envInt("MAX_ITERATIONS", 10) }
+func toolCallLimit() int  { return envInt("MAX_TOOL_CALLS", 20) }
+
+func envInt(key string, fallback int) int {
+	if n, err := strconv.Atoi(os.Getenv(key)); err == nil && n > 0 {
+		return n
+	}
+	return fallback
+}
+
 // replyMsg is the model's answer, or the tools it asked for along with their
 // results, one per call. The question is already in the activity list.
 // final marks the result of the retries, so it is not retried again.
+// toolLimitHit means the reply asked for more tools than were left, so none ran.
 type replyMsg struct {
-	response    string
-	toolCalls   []llm.ToolCall
-	toolResults []llm.Message
-	err         error
-	final       bool
+	response     string
+	toolCalls    []llm.ToolCall
+	toolResults  []llm.Message
+	toolLimitHit bool
+	err          error
+	final        bool
 }
 
 // ask sends the history, which ends with the question just asked or with tool
 // results. The system prompt is added inside the client.
-func ask(history []llm.Message) tea.Cmd {
+// toolsLeft is how many tool calls this question may still make.
+func ask(history []llm.Message, toolsLeft int) tea.Cmd {
 	sent := append([]llm.Message(nil), history...)
 	return func() (msg tea.Msg) {
 		step := "model request"
@@ -175,7 +218,7 @@ func ask(history []llm.Message) tea.Cmd {
 		if err != nil {
 			return replyMsg{err: err}
 		}
-		return handleReply(response, finish, calls, &step)
+		return handleReply(response, finish, calls, toolsLeft, &step)
 	}
 }
 
@@ -193,11 +236,16 @@ func failOnPanic(step *string, msg *tea.Msg) {
 // run, so each one is looked up by name in the registry and called. Every call
 // gets a result carrying its ID, because the model expects one answer per request.
 // step is updated before each tool, so a panic can name the tool that crashed.
-func handleReply(response, finish string, calls []llm.ToolCall, step *string) replyMsg {
+// If the reply asks for more tools than toolsLeft, none of them run.
+func handleReply(response, finish string, calls []llm.ToolCall, toolsLeft int, step *string) replyMsg {
 	if finish != "tool_calls" {
 		return replyMsg{response: response}
 	}
+	if len(calls) > toolsLeft {
+		return replyMsg{toolLimitHit: true}
+	}
 	results := make([]llm.Message, 0, len(calls))
+	//tool call happening herew
 	for _, call := range calls {
 		*step = "tool call " + call.Function.Name
 		result := "error: unknown tool " + call.Function.Name
@@ -223,7 +271,7 @@ func dropLastQuestion(history []llm.Message) []llm.Message {
 // retry sends the same history up to settings.Count more times. Before each
 // try it waits a random time up to the backoff cap. It stops early when an error
 // cannot be retried.
-func retry(history []llm.Message, retryConfig llm.Retry) tea.Cmd {
+func retry(history []llm.Message, retryConfig llm.Retry, toolsLeft int) tea.Cmd {
 	sent := append([]llm.Message(nil), history...)
 	return func() (msg tea.Msg) {
 		step := "model request"
@@ -239,7 +287,7 @@ func retry(history []llm.Message, retryConfig llm.Retry) tea.Cmd {
 			response, finish, calls, err := client.Complete(context.Background(), sent)
 			//if the response is successful, return the response
 			if err == nil {
-				reply := handleReply(response, finish, calls, &step)
+				reply := handleReply(response, finish, calls, toolsLeft, &step)
 				reply.final = true
 				return reply
 			}
