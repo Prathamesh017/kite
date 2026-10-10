@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -162,7 +163,10 @@ type replyMsg struct {
 // results. The system prompt is added inside the client.
 func ask(history []llm.Message) tea.Cmd {
 	sent := append([]llm.Message(nil), history...)
-	return func() tea.Msg {
+	return func() (msg tea.Msg) {
+		step := "model request"
+		defer failOnPanic(&step, &msg)
+
 		client, err := llm.FromEnv()
 		if err != nil {
 			return replyMsg{err: err, final: true}
@@ -171,19 +175,31 @@ func ask(history []llm.Message) tea.Cmd {
 		if err != nil {
 			return replyMsg{err: err}
 		}
-		return handleReply(response, finish, calls)
+		return handleReply(response, finish, calls, &step)
+	}
+}
+
+// failOnPanic is deferred at the top of each background command. If anything
+// inside panics, it turns the panic into a failed reply naming the step that
+// was running, so Kite keeps running and the question goes back to the input.
+// It is final because running the same broken step again would panic again.
+func failOnPanic(step *string, msg *tea.Msg) {
+	if r := recover(); r != nil {
+		*msg = replyMsg{err: fmt.Errorf("%s failed: %v", *step, r), final: true}
 	}
 }
 
 // handleReply checks why the model stopped. "tool_calls" means it wants tools
 // run, so each one is looked up by name in the registry and called. Every call
 // gets a result carrying its ID, because the model expects one answer per request.
-func handleReply(response, finish string, calls []llm.ToolCall) replyMsg {
+// step is updated before each tool, so a panic can name the tool that crashed.
+func handleReply(response, finish string, calls []llm.ToolCall, step *string) replyMsg {
 	if finish != "tool_calls" {
 		return replyMsg{response: response}
 	}
 	results := make([]llm.Message, 0, len(calls))
 	for _, call := range calls {
+		*step = "tool call " + call.Function.Name
 		result := "error: unknown tool " + call.Function.Name
 		if run, ok := tools.Registry[call.Function.Name]; ok {
 			result = run(call.Function.Arguments)
@@ -209,7 +225,10 @@ func dropLastQuestion(history []llm.Message) []llm.Message {
 // cannot be retried.
 func retry(history []llm.Message, retryConfig llm.Retry) tea.Cmd {
 	sent := append([]llm.Message(nil), history...)
-	return func() tea.Msg {
+	return func() (msg tea.Msg) {
+		step := "model request"
+		defer failOnPanic(&step, &msg)
+
 		client, err := llm.FromEnv()
 		if err != nil {
 			return replyMsg{err: err, final: true}
@@ -220,7 +239,7 @@ func retry(history []llm.Message, retryConfig llm.Retry) tea.Cmd {
 			response, finish, calls, err := client.Complete(context.Background(), sent)
 			//if the response is successful, return the response
 			if err == nil {
-				reply := handleReply(response, finish, calls)
+				reply := handleReply(response, finish, calls, &step)
 				reply.final = true
 				return reply
 			}
