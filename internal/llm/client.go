@@ -27,7 +27,8 @@ type Client struct {
 	http  *http.Client
 }
 
-// FromEnv reads API_KEY, TEXT_MODEL_NAME, and API_URL.
+// FromEnv reads API_KEY, TEXT_MODEL_NAME, API_URL, and REQUEST_TIMEOUT.
+// A missing or unreadable timeout falls back to 60s.
 func FromEnv() (Client, error) {
 	key := os.Getenv("API_KEY")
 	model := os.Getenv("TEXT_MODEL_NAME")
@@ -35,11 +36,15 @@ func FromEnv() (Client, error) {
 	if key == "" || model == "" || url == "" {
 		return Client{}, errors.New("set API_KEY, TEXT_MODEL_NAME, and API_URL in .env")
 	}
+	timeout := 60 * time.Second
+	if d, err := time.ParseDuration(os.Getenv("REQUEST_TIMEOUT")); err == nil && d > 0 {
+		timeout = d
+	}
 	return Client{
 		key:   key,
 		model: model,
 		url:   url,
-		http:  &http.Client{Timeout: 60 * time.Second},
+		http:  &http.Client{Timeout: timeout},
 	}, nil
 }
 
