@@ -12,6 +12,7 @@ import (
 var Definitions = []json.RawMessage{
 	json.RawMessage(listFilesDefinition),
 	json.RawMessage(readFileDefinition),
+	json.RawMessage(writeFileDefinition),
 }
 
 // Registry maps a tool name from the model to the function that runs it.
@@ -20,6 +21,7 @@ var Definitions = []json.RawMessage{
 var Registry = map[string]func(arguments string) string{
 	"list_files": listFiles,
 	"read_file":  readFile,
+	"write_file": writeFile,
 }
 
 // insideWorkspace resolves path against the folder Kite was started in, and

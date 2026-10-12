@@ -55,9 +55,10 @@ func FromEnv() (Client, error) {
 }
 
 type request struct {
-	Model    string            `json:"model"`
-	Messages []Message         `json:"messages"`
-	Tools    []json.RawMessage `json:"tools"`
+	Model          string            `json:"model"`
+	Messages       []Message         `json:"messages"`
+	Tools          []json.RawMessage `json:"tools"`
+	ResponseFormat json.RawMessage   `json:"response_format"`
 }
 
 // ToolCall is the model asking to run one tool. The result sent back must
@@ -90,15 +91,21 @@ type response struct {
 }
 
 // Complete sends the system prompt followed by history.
-// The tool definitions go with every request, like the system prompt.
-// It returns the reply text, the finish reason ("stop" for an answer,
-// "tool_calls" when the model wants tools run), and the tool calls.
+// The tool definitions and the JSON reply shape go with every request, like
+// the system prompt. It returns the reply text (JSON in the reply shape, see
+// ParseReply), the finish reason ("stop" for an answer, "tool_calls" when the
+// model wants tools run), and the tool calls.
 func (c Client) Complete(ctx context.Context, history []Message) (string, string, []ToolCall, error) {
 	messages := make([]Message, 0, 1+len(history))
 	messages = append(messages, Message{Role: "system", Content: SystemPrompt})
 	messages = append(messages, history...)
 
-	body, err := json.Marshal(request{Model: c.model, Messages: messages, Tools: tools.Definitions})
+	body, err := json.Marshal(request{
+		Model:          c.model,
+		Messages:       messages,
+		Tools:          tools.Definitions,
+		ResponseFormat: json.RawMessage(replyFormat),
+	})
 	if err != nil {
 		return "", "", nil, err
 	}

@@ -241,10 +241,10 @@ func handleReply(response, finish string, calls []llm.ToolCall, toolsLeft int, s
 	// "length" means the model ran out of room mid-reply. Keep what it wrote,
 	// and say it was cut off so it is not mistaken for a full answer.
 	if finish == "length" {
-		return replyMsg{response: response + "\n\nThe reply was cut off because it hit the model's length limit."}
+		return replyMsg{response: readAnswer(response) + "\n\nThe reply was cut off because it hit the model's length limit."}
 	}
 	if finish != "tool_calls" {
-		return replyMsg{response: response}
+		return replyMsg{response: readAnswer(response)}
 	}
 	if len(calls) > toolsLeft {
 		return replyMsg{toolLimitHit: true}
@@ -260,6 +260,24 @@ func handleReply(response, finish string, calls []llm.ToolCall, toolsLeft int, s
 		results = append(results, llm.Message{Role: "tool", Content: result, ToolCallID: call.ID})
 	}
 	return replyMsg{response: response, toolCalls: calls, toolResults: results}
+}
+
+// readAnswer turns the model's JSON reply into the text shown as Kite's answer.
+// "normal" and "unsupported" show the answer (for unsupported, the reason).
+// "task" is not run yet, so its raw JSON reply is shown as it is.
+// Text that is not the JSON shape is shown as it is.
+func readAnswer(response string) string {
+	reply, ok := llm.ParseReply(response)
+	if !ok {
+		return response
+	}
+	if reply.Mode == "task" {
+		return "Task mode is not handled yet. The model replied:\n" + response
+	}
+	if reply.Answer == "" {
+		return "The model returned an empty answer."
+	}
+	return reply.Answer
 }
 
 // dropLastQuestion removes the last question and any tool steps after it,
