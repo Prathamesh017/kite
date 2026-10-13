@@ -58,7 +58,7 @@ type request struct {
 	Model          string            `json:"model"`
 	Messages       []Message         `json:"messages"`
 	Tools          []json.RawMessage `json:"tools"`
-	ResponseFormat json.RawMessage   `json:"response_format"`
+	ResponseFormat json.RawMessage   `json:"response_format,omitempty"`
 }
 
 // ToolCall is the model asking to run one tool. The result sent back must
@@ -90,22 +90,23 @@ type response struct {
 	} `json:"error"`
 }
 
-// Complete sends the system prompt followed by history.
-// The tool definitions and the JSON reply shape go with every request, like
-// the system prompt. It returns the reply text (JSON in the reply shape, see
-// ParseReply), the finish reason ("stop" for an answer, "tool_calls" when the
-// model wants tools run), and the tool calls.
-func (c Client) Complete(ctx context.Context, history []Message) (string, string, []ToolCall, error) {
-	messages := make([]Message, 0, 1+len(history))
+// Complete sends the system prompt followed by history, with the tool
+// definitions. withShape adds the mode instructions and the JSON reply shape,
+// for the requests of the user's own question; the reply text is then JSON
+// (see ParseReply). Without it, as for a single task, the reply is plain text.
+// It returns the reply text, the finish reason ("stop" for an answer,
+// "tool_calls" when the model wants tools run), and the tool calls.
+func (c Client) Complete(ctx context.Context, history []Message, withShape bool) (string, string, []ToolCall, error) {
+	messages := make([]Message, 0, 2+len(history))
 	messages = append(messages, Message{Role: "system", Content: SystemPrompt})
-	messages = append(messages, history...)
+	payload := request{Model: c.model, Tools: tools.Definitions}
+	if withShape {
+		messages = append(messages, Message{Role: "system", Content: ModePrompt})
+		payload.ResponseFormat = json.RawMessage(replyFormat)
+	}
+	payload.Messages = append(messages, history...)
 
-	body, err := json.Marshal(request{
-		Model:          c.model,
-		Messages:       messages,
-		Tools:          tools.Definitions,
-		ResponseFormat: json.RawMessage(replyFormat),
-	})
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", "", nil, err
 	}

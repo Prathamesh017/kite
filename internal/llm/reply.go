@@ -43,11 +43,21 @@ const replyFormat = `{
   }
 }`
 
-// Reply is the JSON shape the model answers in. Tasks are not read yet,
-// because running tasks is a later step.
+// Reply is the JSON shape the model answers in. Tasks is only filled in "task" mode.
 type Reply struct {
 	Mode   string `json:"mode"`
 	Answer string `json:"answer"`
+	Tasks  []Task `json:"tasks"`
+}
+
+// Task is one step of a task-mode reply. Only the fields Kite uses are read:
+// the description to send, and the policy that decides whether it passed.
+type Task struct {
+	ID                 string `json:"id"`
+	Description        string `json:"description"`
+	VerificationPolicy struct {
+		Type string `json:"type"`
+	} `json:"verification_policy"`
 }
 
 // ParseReply reads the model's text as a Reply. ok is false when the text is

@@ -9,14 +9,17 @@ import (
 )
 
 // Activity lists the conversation. The question is appended when it is sent.
-// The answer is appended when it comes back. thinking and retrying are only
+// The answer is appended when it comes back. status and retrying are only
 // markers while waiting; they are not part of the conversation.
+// status says what Kite is doing now, like "thinking" or "reading main.go".
+// frame moves the shimmer along it.
 //
 // top is the first visible row while scrolledUp is true. When scrolledUp is
 // false the pane follows the bottom, so new messages come into view.
 type Activity struct {
 	conversions []llm.Message
-	thinking    bool
+	status      string
+	frame       int
 	retrying    bool
 	top         int
 	scrolledUp  bool
@@ -24,8 +27,21 @@ type Activity struct {
 
 func (a *Activity) AppendQuestion(question string) {
 	a.conversions = append(a.conversions, llm.Message{Role: "user", Content: question})
-	a.thinking = true
+	a.status = "thinking"
 	a.retrying = false
+}
+
+// SetStatus replaces the status line. It stays until the next step changes it.
+func (a *Activity) SetStatus(status string) {
+	a.status = status
+	a.retrying = false
+}
+
+// Shimmer moves the highlight one step, only while there is a status to show.
+func (a *Activity) Shimmer() {
+	if a.status != "" {
+		a.frame++
+	}
 }
 
 // AppendToolCall shows that a tool ran. It is only for display; the model's
@@ -36,7 +52,7 @@ func (a *Activity) AppendToolCall(name string) {
 
 func (a *Activity) AppendAnswer(answer string) {
 	a.conversions = append(a.conversions, llm.Message{Role: "assistant", Content: answer})
-	a.thinking = false
+	a.status = ""
 	a.retrying = false
 }
 
@@ -48,7 +64,7 @@ func (a *Activity) Retrying() {
 // RemoveQuestion drops the unanswered question and any tool lines after it,
 // and returns the question's text.
 func (a *Activity) RemoveQuestion() string {
-	a.thinking = false
+	a.status = ""
 	a.retrying = false
 	for i := len(a.conversions) - 1; i >= 0; i-- {
 		if a.conversions[i].Role == "user" {
@@ -107,11 +123,30 @@ func (a Activity) rows(width, height int) (rows []string, room int) {
 		rows = append(rows, strings.Split(rendered, "\n")...)
 	}
 	if a.retrying {
-		rows = append(rows, mutedStyle.Render("> retrying..."))
-	} else if a.thinking {
-		rows = append(rows, mutedStyle.Render("> thinking..."))
+		rows = append(rows, shimmer("> retrying...", a.frame))
+	} else if a.status != "" {
+		rows = append(rows, shimmer("> "+a.status+"...", a.frame))
 	}
 	return rows, room
+}
+
+// shimmer draws text muted, with a few brighter letters around a point that
+// moves one letter per frame and wraps around, so the line looks in progress.
+func shimmer(text string, frame int) string {
+	letters := []rune(text)
+	const spread = 2
+	cycle := len(letters) + 2*spread
+	pos := frame%cycle - spread
+
+	var b strings.Builder
+	for i, r := range letters {
+		if i >= pos-spread && i <= pos+spread {
+			b.WriteString(titleStyle.Render(string(r)))
+		} else {
+			b.WriteString(mutedStyle.Render(string(r)))
+		}
+	}
+	return b.String()
 }
 
 func marker(role string) string {
