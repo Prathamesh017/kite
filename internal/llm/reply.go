@@ -30,7 +30,7 @@ const replyFormat = `{
               "verification_policy": {
                 "type": "object",
                 "properties": {
-                  "type": { "type": "string", "enum": ["none", "tool_result", "read_back", "test"] }
+                  "type": { "type": "string", "enum": ["none", "tool_result", "read_back"] }
                 },
                 "required": ["type"]
               }
