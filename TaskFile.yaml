@@ -15,3 +15,8 @@ tasks:
      cmds:  
        - go run ./cmd/main.go
      silent: true
+  debug:
+     desc: Run the KI Agent under the debugger (attach with "Attach to kite")
+     cmds:
+       - ~/go/bin/dlv debug ./cmd --headless --listen=127.0.0.1:2345 --api-version=2
+     silent: true

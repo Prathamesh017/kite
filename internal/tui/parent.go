@@ -138,6 +138,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scrollActivity(delta)
 			return m, nil
 		}
+		//only chat window can take typing currently , no focus switching between panes; only the chat takes typing.
 		// HandleKey returns the question only on Enter. Other keys just edit the input.
 		if question := m.chat.HandleKey(msg); question != "" {
 			return m, m.onQuestion(question)

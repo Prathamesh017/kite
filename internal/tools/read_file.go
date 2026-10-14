@@ -64,6 +64,9 @@ func readFile(arguments string) string {
 	if !ok {
 		return "error: " + args.Path + " is outside the workspace"
 	}
+	if isBlocked(full) {
+		return "error: " + args.Path + " is blocked, read_file cannot open secret files"
+	}
 
 	info, err := os.Stat(full)
 	if err != nil {
@@ -148,6 +151,31 @@ var binaryExtensions = map[string]bool{
 // isBinary reports whether data is not text. Text files almost never contain a
 // zero byte, and they are valid UTF-8, so failing either check means binary.
 // This catches binaries whose names say nothing, like a compiled program.
+// isBlocked reports whether path is a file read_file must not open: .env and
+// .env.*, *.pem, and anything under .git. A symlink is checked by its target too.
+func isBlocked(path string) bool {
+	if blockedName(path) {
+		return true
+	}
+	if target, err := filepath.EvalSymlinks(path); err == nil && target != path {
+		return blockedName(target)
+	}
+	return false
+}
+
+func blockedName(path string) bool {
+	base := filepath.Base(path)
+	if base == ".env" || strings.HasPrefix(base, ".env.") || strings.EqualFold(filepath.Ext(base), ".pem") {
+		return true
+	}
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == ".git" {
+			return true
+		}
+	}
+	return false
+}
+
 func isBinary(data []byte) bool {
 	return bytes.IndexByte(data, 0) >= 0 || !utf8.Valid(data)
 }
