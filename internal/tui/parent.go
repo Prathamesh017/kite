@@ -112,6 +112,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	case cancelledMsg:
 		return m, nil
+	case timedOutMsg:
+		if m.cancelRun == nil {
+			return m, nil
+		}
+		return m, m.onTimeout()
 	case replyMsg:
 		// A reply that lands after Esc belongs to a run that is already gone.
 		if m.cancelRun == nil {

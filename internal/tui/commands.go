@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -33,6 +34,17 @@ type toolsDoneMsg struct {
 // cancelledMsg is what a background command returns once its run was cancelled.
 type cancelledMsg struct{}
 
+// timedOutMsg is what a background command returns once its run ran out of time.
+type timedOutMsg struct{}
+
+// stopped is the message for a run whose context is done: timed out or cancelled.
+func stopped(ctx context.Context) tea.Msg {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return timedOutMsg{}
+	}
+	return cancelledMsg{}
+}
+
 // ask sends the history, which ends with a question, a task, or tool results.
 // The system prompt is added inside the client. withShape adds the mode
 // instructions and the JSON reply shape, for the user's own question only.
@@ -48,7 +60,7 @@ func ask(ctx context.Context, history []llm.Message, withShape bool) tea.Cmd {
 		}
 		response, finish, calls, err := client.Complete(ctx, sent, withShape)
 		if ctx.Err() != nil {
-			return cancelledMsg{}
+			return stopped(ctx)
 		}
 		if err != nil {
 			return replyMsg{err: err}
@@ -73,13 +85,13 @@ func retry(ctx context.Context, history []llm.Message, retryConfig llm.Retry, wi
 		for attempt := 0; attempt < retryConfig.Count; attempt++ {
 			select {
 			case <-ctx.Done():
-				return cancelledMsg{}
+				return stopped(ctx)
 			case <-time.After(llm.RandomUpTo(llm.Backoff(attempt, retryConfig))):
 			}
 
 			response, finish, calls, err := client.Complete(ctx, sent, withShape)
 			if ctx.Err() != nil {
-				return cancelledMsg{}
+				return stopped(ctx)
 			}
 			//if the response is successful, return the response
 			if err == nil {
@@ -106,7 +118,7 @@ func runTools(ctx context.Context, response string, calls []llm.ToolCall) tea.Cm
 		results := make([]llm.Message, 0, len(calls))
 		for _, call := range calls {
 			if ctx.Err() != nil {
-				return cancelledMsg{}
+				return stopped(ctx)
 			}
 			step = "tool call " + call.Function.Name
 			result := "error: unknown tool " + call.Function.Name
@@ -116,7 +128,7 @@ func runTools(ctx context.Context, response string, calls []llm.ToolCall) tea.Cm
 			results = append(results, llm.Message{Role: "tool", Content: result, ToolCallID: call.ID})
 		}
 		if ctx.Err() != nil {
-			return cancelledMsg{}
+			return stopped(ctx)
 		}
 		return toolsDoneMsg{response: response, calls: calls, results: results}
 	}

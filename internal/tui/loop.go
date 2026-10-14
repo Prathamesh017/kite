@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -17,7 +18,7 @@ func (m *Model) onQuestion(question string) tea.Cmd {
 	m.activity.AppendQuestion(question)
 	m.history = append(m.history, llm.Message{Role: "user", Content: question})
 	m.iterations, m.toolCalls = 0, 0
-	m.runCtx, m.cancelRun = context.WithCancel(context.Background())
+	m.runCtx, m.cancelRun = context.WithTimeout(context.Background(), runTimeout)
 	return ask(m.runCtx, m.history, true)
 }
 
@@ -36,6 +37,16 @@ func (m *Model) cancel() {
 	m.taskHistory = nil
 	m.activity.SetStatus("")
 	m.chat.Show("")
+}
+
+func (m *Model) onTimeout() tea.Cmd {
+	m.releaseRun()
+	m.tasks.Clear()
+	m.taskHistory = nil
+	question := m.activity.RemoveQuestion()
+	m.history = dropLastQuestion(m.history)
+	m.chat.Restore(question, "Request timed out, please try again.")
+	return nil
 }
 
 func (m *Model) releaseRun() {
@@ -135,6 +146,8 @@ func (m *Model) loopHistory() *[]llm.Message {
 	}
 	return &m.history
 }
+
+const runTimeout = time.Minute
 
 func iterationLimit() int { return envInt("MAX_ITERATIONS", 10) }
 func toolCallLimit() int  { return envInt("MAX_TOOL_CALLS", 20) }

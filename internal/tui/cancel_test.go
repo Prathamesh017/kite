@@ -78,6 +78,40 @@ func TestLateReplyAfterEscIsIgnored(t *testing.T) {
 	}
 }
 
+func TestTimeoutPutsQuestionBack(t *testing.T) {
+	m, ctx := running(t)
+
+	m = press(m, timedOutMsg{})
+
+	if ctx.Err() == nil || m.cancelRun != nil {
+		t.Error("run was not released")
+	}
+	if m.tasks.Active() || m.taskHistory != nil {
+		t.Error("task list or task history was not cleared")
+	}
+	if len(m.history) != 0 {
+		t.Errorf("question was not dropped from history: %+v", m.history)
+	}
+	if m.chat.input != "summarize main.go and write docs.md" {
+		t.Errorf("chat input = %q, want the question back", m.chat.input)
+	}
+	if m.chat.output != "Request timed out, please try again." || m.chat.busy {
+		t.Errorf("chat = %+v, want the timeout reason and an unlocked input", m.chat)
+	}
+}
+
+func TestRunToolsReportsTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+
+	calls := []llm.ToolCall{{ID: "1", Function: llm.FunctionCall{Name: "list_files", Arguments: `{}`}}}
+	msg := runTools(ctx, "", calls)()
+
+	if _, ok := msg.(timedOutMsg); !ok {
+		t.Errorf("runTools past its deadline returned %T, want timedOutMsg", msg)
+	}
+}
+
 func TestRunToolsStopsWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
