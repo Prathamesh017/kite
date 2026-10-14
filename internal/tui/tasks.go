@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
@@ -12,9 +13,26 @@ import (
 )
 
 func (m *Model) startTasks(tasks []llm.Task) tea.Cmd {
+	if existing := existingFiles(tasks); len(existing) > 0 {
+		return m.showAnswer("Not started: " + strings.Join(existing, ", ") +
+			" already exists, and Kite can only create new files.")
+	}
 	m.tasks.Start(tasks)
 	m.activity.SetStatus("creating todo list")
 	return m.startTask(0)
+}
+
+//checks if a task has to write a file that already exists
+func existingFiles(tasks []llm.Task) []string {
+	var existing []string
+	for _, task := range tasks {
+		for _, path := range task.Creates {
+			if _, err := os.Stat(path); err == nil {
+				existing = append(existing, path)
+			}
+		}
+	}
+	return existing
 }
 
 func (m *Model) startTask(i int) tea.Cmd {

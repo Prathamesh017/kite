@@ -17,7 +17,7 @@ import (
 // Where the rest lives:
 //   - loop.go: what happens on a question, a model reply, and finished tools
 //   - commands.go: the background work (model requests, retries, running tools)
-//   - taskrun.go: starting, judging, and finishing tasks
+//   - tasks.go: starting, judging, and finishing tasks
 //   - layout.go: pane sizes, scrolling, and mouse hit-testing
 type Model struct {
 	width  int

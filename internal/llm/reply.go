@@ -26,6 +26,7 @@ const replyFormat = `{
               "description": { "type": "string" },
               "dependencies": { "type": "array", "items": { "type": "string" } },
               "acceptance_criteria": { "type": "array", "items": { "type": "string" } },
+              "creates": { "type": "array", "items": { "type": "string" } },
               "verification_policy": {
                 "type": "object",
                 "properties": {
@@ -34,7 +35,7 @@ const replyFormat = `{
                 "required": ["type"]
               }
             },
-            "required": ["id", "description", "dependencies", "acceptance_criteria", "verification_policy"]
+            "required": ["id", "description", "dependencies", "acceptance_criteria", "creates", "verification_policy"]
           }
         }
       },
@@ -51,10 +52,12 @@ type Reply struct {
 }
 
 // Task is one step of a task-mode reply. Only the fields Kite uses are read:
-// the description to send, and the policy that decides whether it passed.
+// the description to send, the new files it will create, and the policy that
+// decides whether it passed.
 type Task struct {
-	ID                 string `json:"id"`
-	Description        string `json:"description"`
+	ID                 string   `json:"id"`
+	Description        string   `json:"description"`
+	Creates            []string `json:"creates"`
 	VerificationPolicy struct {
 		Type string `json:"type"`
 	} `json:"verification_policy"`
