@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -16,14 +17,32 @@ func (m *Model) onQuestion(question string) tea.Cmd {
 	m.activity.AppendQuestion(question)
 	m.history = append(m.history, llm.Message{Role: "user", Content: question})
 	m.iterations, m.toolCalls = 0, 0
-	return ask(m.history, true)
+	m.runCtx, m.cancelRun = context.WithCancel(context.Background())
+	return ask(m.runCtx, m.history, true)
 }
 
 func (m *Model) showAnswer(answer string) tea.Cmd {
+	m.releaseRun()
 	m.activity.AppendAnswer(answer)
 	m.history = append(m.history, llm.Message{Role: "assistant", Content: answer})
 	m.chat.Show("")
 	return nil
+}
+
+func (m *Model) cancel() {
+	m.releaseRun()
+	m.history = append(m.history, llm.Message{Role: "assistant", Content: "(cancelled by the user before answering)"})
+	m.tasks.Clear()
+	m.taskHistory = nil
+	m.activity.SetStatus("")
+	m.chat.Show("")
+}
+
+func (m *Model) releaseRun() {
+	if m.cancelRun != nil {
+		m.cancelRun()
+	}
+	m.runCtx, m.cancelRun = nil, nil
 }
 
 
@@ -44,7 +63,7 @@ func (m *Model) onToolCalls(msg replyMsg) tea.Cmd {
 		return m.stopLoop("Reached its tool-call limit. The task may be partially complete.")
 	}
 	m.activity.SetStatus(toolStatus(msg.calls))
-	return runTools(msg.response, msg.calls)
+	return runTools(m.runCtx, msg.response, msg.calls)
 }
 
 func (m *Model) onQuestionAnswer(msg replyMsg) tea.Cmd {
@@ -70,11 +89,12 @@ func (m *Model) onReplyError(msg replyMsg) tea.Cmd {
 	retryConfig := llm.RetryConfigFromEnv()
 	if !msg.final && llm.Retryable(msg.err) && retryConfig.Count > 0 {
 		m.activity.Retrying()
-		return retry(*m.loopHistory(), retryConfig, !m.tasks.Active())
+		return retry(m.runCtx, *m.loopHistory(), retryConfig, !m.tasks.Active())
 	}
 	if m.tasks.Active() {
 		return m.finishTask("The request failed: "+failText(msg.err), false)
 	}
+	m.releaseRun()
 	question := m.activity.RemoveQuestion()
 	m.history = dropLastQuestion(m.history)
 	m.chat.Restore(question, failText(msg.err))
@@ -99,7 +119,7 @@ func (m *Model) onToolsDone(msg toolsDoneMsg) tea.Cmd {
 		return m.stopLoop("Reached its execution-step limit before completing the task.")
 	}
 	m.activity.SetStatus("thinking")
-	return ask(*history, !m.tasks.Active())
+	return ask(m.runCtx, *history, !m.tasks.Active())
 }
 
 func (m *Model) stopLoop(note string) tea.Cmd {

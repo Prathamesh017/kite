@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -49,6 +50,11 @@ type Model struct {
 	// question or task starts.
 	iterations int
 	toolCalls  int
+
+	// runCtx is the running question's context, sent with every request and
+	// tool step of that run. cancelRun cancels it. Both are nil when nothing runs.
+	runCtx    context.Context
+	cancelRun context.CancelFunc
 }
 
 func New() Model {
@@ -104,12 +110,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case cancelledMsg:
+		return m, nil
 	case replyMsg:
+		// A reply that lands after Esc belongs to a run that is already gone.
+		if m.cancelRun == nil {
+			return m, nil
+		}
 		if msg.err != nil {
 			return m, m.onReplyError(msg)
 		}
 		return m, m.onReply(msg)
 	case toolsDoneMsg:
+		if m.cancelRun == nil {
+			return m, nil
+		}
 		return m, m.onToolsDone(msg)
 	case tea.MouseMsg:
 		// The wheel only scrolls when the pointer is over the activity pane.
@@ -126,6 +141,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "esc":
+			if m.cancelRun != nil {
+				m.cancel()
+			}
+			return m, nil
 		case "ctrl+t":
 			// ctrl+t, not t, so the letter can be typed into the chat.
 			m.setTheme((m.theme + 1) % len(themes))

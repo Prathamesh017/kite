@@ -26,7 +26,7 @@ func (m *Model) startTask(i int) tea.Cmd {
 	m.taskHistory = []llm.Message{{Role: "user", Content: content}}
 	m.taskErrors = map[string]string{}
 	m.iterations, m.toolCalls = 0, 0
-	return ask(m.taskHistory, false)
+	return ask(m.runCtx, m.taskHistory, false)
 }
 
 func (m *Model) recordToolErrors(calls []llm.ToolCall, results []llm.Message) {
@@ -69,7 +69,7 @@ func (m *Model) summarizeRun() tea.Cmd {
 	m.tasks.Clear()
 	m.taskHistory = nil
 	m.activity.SetStatus("summarizing")
-	return ask([]llm.Message{{Role: "user", Content: content}}, false)
+	return ask(m.runCtx, []llm.Message{{Role: "user", Content: content}}, false)
 }
 
 func (m *Model) endRun() tea.Cmd {

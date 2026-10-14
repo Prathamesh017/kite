@@ -30,10 +30,13 @@ type toolsDoneMsg struct {
 	results  []llm.Message
 }
 
+// cancelledMsg is what a background command returns once its run was cancelled.
+type cancelledMsg struct{}
+
 // ask sends the history, which ends with a question, a task, or tool results.
 // The system prompt is added inside the client. withShape adds the mode
 // instructions and the JSON reply shape, for the user's own question only.
-func ask(history []llm.Message, withShape bool) tea.Cmd {
+func ask(ctx context.Context, history []llm.Message, withShape bool) tea.Cmd {
 	sent := append([]llm.Message(nil), history...)
 	return func() (msg tea.Msg) {
 		step := "model request"
@@ -43,7 +46,10 @@ func ask(history []llm.Message, withShape bool) tea.Cmd {
 		if err != nil {
 			return replyMsg{err: err, final: true}
 		}
-		response, finish, calls, err := client.Complete(context.Background(), sent, withShape)
+		response, finish, calls, err := client.Complete(ctx, sent, withShape)
+		if ctx.Err() != nil {
+			return cancelledMsg{}
+		}
 		if err != nil {
 			return replyMsg{err: err}
 		}
@@ -54,7 +60,7 @@ func ask(history []llm.Message, withShape bool) tea.Cmd {
 // retry sends the same history up to settings.Count more times. Before each
 // try it waits a random time up to the backoff cap. It stops early when an error
 // cannot be retried.
-func retry(history []llm.Message, retryConfig llm.Retry, withShape bool) tea.Cmd {
+func retry(ctx context.Context, history []llm.Message, retryConfig llm.Retry, withShape bool) tea.Cmd {
 	sent := append([]llm.Message(nil), history...)
 	return func() (msg tea.Msg) {
 		step := "model request"
@@ -65,9 +71,16 @@ func retry(history []llm.Message, retryConfig llm.Retry, withShape bool) tea.Cmd
 			return replyMsg{err: err, final: true}
 		}
 		for attempt := 0; attempt < retryConfig.Count; attempt++ {
-			time.Sleep(llm.RandomUpTo(llm.Backoff(attempt, retryConfig)))
+			select {
+			case <-ctx.Done():
+				return cancelledMsg{}
+			case <-time.After(llm.RandomUpTo(llm.Backoff(attempt, retryConfig))):
+			}
 
-			response, finish, calls, err := client.Complete(context.Background(), sent, withShape)
+			response, finish, calls, err := client.Complete(ctx, sent, withShape)
+			if ctx.Err() != nil {
+				return cancelledMsg{}
+			}
 			//if the response is successful, return the response
 			if err == nil {
 				return replyMsg{response: response, finish: finish, calls: calls, final: true}
@@ -84,19 +97,26 @@ func retry(history []llm.Message, retryConfig llm.Retry, withShape bool) tea.Cmd
 // runTools runs each call by looking its name up in the registry. Every call
 // gets a result carrying its ID, because the model expects one answer per request.
 // step is updated before each tool, so a panic can name the tool that crashed.
-func runTools(response string, calls []llm.ToolCall) tea.Cmd {
+// A tool that already started finishes; the next one does not start after a cancel.
+func runTools(ctx context.Context, response string, calls []llm.ToolCall) tea.Cmd {
 	return func() (msg tea.Msg) {
 		step := "tool call"
 		defer failOnPanic(&step, &msg)
 
 		results := make([]llm.Message, 0, len(calls))
 		for _, call := range calls {
+			if ctx.Err() != nil {
+				return cancelledMsg{}
+			}
 			step = "tool call " + call.Function.Name
 			result := "error: unknown tool " + call.Function.Name
 			if run, ok := tools.Registry[call.Function.Name]; ok {
 				result = run(call.Function.Arguments)
 			}
 			results = append(results, llm.Message{Role: "tool", Content: result, ToolCallID: call.ID})
+		}
+		if ctx.Err() != nil {
+			return cancelledMsg{}
 		}
 		return toolsDoneMsg{response: response, calls: calls, results: results}
 	}
