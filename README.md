@@ -2,6 +2,7 @@
 
 A minimal coding agent that runs in your terminal, built from scratch in Go.
 
+![Kite demo](assets/demo.gif)
 
 ## What it can do (v0.1.0)
 

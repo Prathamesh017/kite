@@ -105,8 +105,11 @@ func (m *Model) finishTask(answer string, passed bool) tea.Cmd {
 	m.checking = false
 	i := m.tasks.Current()
 	m.tasks.Finish(i, answer, passed)
+	if passed {
+		m.activity.AppendNote(fmt.Sprintf("task %d completed", i+1))
+	}
 	if next := i + 1; passed && next < m.tasks.Len() {
-		m.activity.SetStatus(fmt.Sprintf("task %d completed", i+1))
+		m.activity.SetStatus("thinking")
 		return m.startTask(next)
 	}
 	if passed {
@@ -117,7 +120,7 @@ func (m *Model) finishTask(answer string, passed bool) tea.Cmd {
 
 func (m *Model) summarizeRun() tea.Cmd {
 	content := "These tasks all completed. In one or two short lines, say what was done, " +
-		"for example \"Both tasks completed. docs.md added.\" Do not repeat file contents. Do not call tools.\n\n" +
+		"for example \"All tasks completed. docs.md added.\" Do not repeat file contents. Do not call tools.\n\n" +
 		m.tasks.Earlier()
 	m.tasks.Clear()
 	m.taskHistory = nil

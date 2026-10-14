@@ -16,6 +16,15 @@ type Theme struct {
 // themes are cycled with the t key. The first one is used at startup.
 var themes = []Theme{
 	{
+		Name:   "Tokyo Night",
+		Border: "#3B4261",
+		Brand:  "#7AA2F7",
+		Title:  "#C0CAF5",
+		Muted:  "#565F89",
+		Ready:  "#9ECE6A",
+		Fill:   "#1A1B26",
+	},
+	{
 		Name:   "Sky Kite",
 		Border: "#0EA5E9",
 		Brand:  "#38BDF8",
@@ -32,15 +41,6 @@ var themes = []Theme{
 		Muted:  "#475569",
 		Ready:  "#34D399",
 		Fill:   "#0A1428",
-	},
-	{
-		Name:   "Tokyo Night",
-		Border: "#3B4261",
-		Brand:  "#7AA2F7",
-		Title:  "#C0CAF5",
-		Muted:  "#565F89",
-		Ready:  "#9ECE6A",
-		Fill:   "#1A1B26",
 	},
 	{
 		Name:   "Nord Frost",

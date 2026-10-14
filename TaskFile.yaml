@@ -25,3 +25,8 @@ tasks:
      cmds:
        - go test ./...
      silent: true
+  demo:
+     desc: Record the demo GIF (assets/demo.gif)
+     cmds:
+       - vhs assets/demo.tape
+     silent: true

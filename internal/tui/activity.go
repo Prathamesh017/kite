@@ -50,6 +50,11 @@ func (a *Activity) AppendToolCall(name string) {
 	a.conversions = append(a.conversions, llm.Message{Role: "tool", Content: name})
 }
 
+// AppendNote shows a step of the run, like "task 1 completed". It is only for display.
+func (a *Activity) AppendNote(note string) {
+	a.conversions = append(a.conversions, llm.Message{Role: "note", Content: note})
+}
+
 func (a *Activity) AppendAnswer(answer string) {
 	a.conversions = append(a.conversions, llm.Message{Role: "assistant", Content: answer})
 	a.status = ""
@@ -61,7 +66,7 @@ func (a *Activity) Retrying() {
 	a.retrying = true
 }
 
-// RemoveQuestion drops the unanswered question and any tool lines after it,
+// RemoveQuestion drops the unanswered question and any tool or note lines after it,
 // and returns the question's text.
 func (a *Activity) RemoveQuestion() string {
 	a.status = ""
@@ -116,8 +121,11 @@ func (a Activity) rows(width, height int) (rows []string, room int) {
 
 	for _, line := range a.conversions {
 		text := marker(line.Role) + "  " + line.Content
-		if line.Role == "tool" {
+		switch line.Role {
+		case "tool":
 			text = mutedStyle.Render("> using tool call - " + line.Content)
+		case "note":
+			text = mutedStyle.Render("> " + line.Content)
 		}
 		rendered := lipgloss.NewStyle().Width(textW).Render(text)
 		rows = append(rows, strings.Split(rendered, "\n")...)

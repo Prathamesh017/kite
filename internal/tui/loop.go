@@ -125,10 +125,9 @@ func (m *Model) onToolsDone(msg toolsDoneMsg) tea.Cmd {
 
 	if m.tasks.Active() {
 		m.recordToolErrors(msg.calls, msg.results)
-	} else {
-		for _, call := range msg.calls {
-			m.activity.AppendToolCall(call.Function.Name)
-		}
+	}
+	for _, call := range msg.calls {
+		m.activity.AppendToolCall(call.Function.Name)
 	}
 
 	if m.iterations >= iterationLimit() {
