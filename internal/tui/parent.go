@@ -45,8 +45,12 @@ type Model struct {
 	// it, so a recovered mistake does not count. It starts over for each task.
 	taskErrors map[string]string
 
+	// checking is true while a read_back check runs for the current task. Its
+	// requests use taskHistory and ask for the verdict shape.
+	checking bool
+
 	// iterations and toolCalls count the model replies and the tools run for
-	// the current question, or the running task. Both go back to 0 when a new
+	// the current question, or the running task. Both go back to 0,pa when a new
 	// question or task starts.
 	iterations int
 	toolCalls  int

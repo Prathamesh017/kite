@@ -44,7 +44,7 @@ func (m *Model) startTask(i int) tea.Cmd {
 	m.taskHistory = []llm.Message{{Role: "user", Content: content}}
 	m.taskErrors = map[string]string{}
 	m.iterations, m.toolCalls = 0, 0
-	return ask(m.runCtx, m.taskHistory, false)
+	return ask(m.runCtx, m.taskHistory, llm.NoShape)
 }
 
 func (m *Model) recordToolErrors(calls []llm.ToolCall, results []llm.Message) {
@@ -64,10 +64,45 @@ func (m *Model) judgeTask(answer string) tea.Cmd {
 		failed := strings.Join(slices.Sorted(maps.Values(m.taskErrors)), "; ")
 		answer = "A tool failed: " + failed + "\n" + answer
 	}
+	if passed && policy == "read_back" {
+		return m.startCheck()
+	}
 	return m.finishTask(answer, passed)
 }
 
+func (m *Model) startCheck() tea.Cmd {
+	task := m.tasks.Task(m.tasks.Current())
+	files := "none listed"
+	if len(task.Creates) > 0 {
+		files = strings.Join(task.Creates, ", ")
+	}
+	content := "Check the result of this task. Read the files it created with read_file and " +
+		"compare them with the acceptance criteria. Do not write files.\n\n" +
+		"Task: " + task.Description + "\n\n" +
+		"Acceptance criteria:\n- " + strings.Join(task.AcceptanceCriteria, "\n- ") + "\n\n" +
+		"Files it created: " + files + "\n\n" +
+		"Reply with verdict PASS or FAIL. In message, say in one line what the files hold, or why the task fails."
+	m.checking = true
+	m.taskHistory = []llm.Message{{Role: "user", Content: content}}
+	m.taskErrors = map[string]string{}
+	m.iterations, m.toolCalls = 0, 0
+	return ask(m.runCtx, m.taskHistory, llm.VerdictShape)
+}
+
+func (m *Model) onVerdict(msg replyMsg) tea.Cmd {
+	verdict, ok := llm.ParseVerdict(msg.response)
+	if !ok {
+		return m.finishTask("The read_back check did not return a verdict.", false)
+	}
+	if len(m.taskErrors) > 0 {
+		failed := strings.Join(slices.Sorted(maps.Values(m.taskErrors)), "; ")
+		return m.finishTask("A tool failed during the check: "+failed, false)
+	}
+	return m.finishTask(verdict.Message, verdict.Verdict == "PASS")
+}
+
 func (m *Model) finishTask(answer string, passed bool) tea.Cmd {
+	m.checking = false
 	i := m.tasks.Current()
 	m.tasks.Finish(i, answer, passed)
 	if next := i + 1; passed && next < m.tasks.Len() {
@@ -87,7 +122,7 @@ func (m *Model) summarizeRun() tea.Cmd {
 	m.tasks.Clear()
 	m.taskHistory = nil
 	m.activity.SetStatus("summarizing")
-	return ask(m.runCtx, []llm.Message{{Role: "user", Content: content}}, false)
+	return ask(m.runCtx, []llm.Message{{Role: "user", Content: content}}, llm.NoShape)
 }
 
 func (m *Model) endRun() tea.Cmd {

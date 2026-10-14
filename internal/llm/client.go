@@ -90,19 +90,33 @@ type response struct {
 	} `json:"error"`
 }
 
+// Shape is the reply shape a request asks for.
+type Shape int
+
+const (
+	// NoShape: the reply is plain text, as for a single task.
+	NoShape Shape = iota
+	// ModeShape: the mode instructions and the JSON reply shape, for the
+	// requests of the user's own question (see ParseReply).
+	ModeShape
+	// VerdictShape: PASS or FAIL with a message, for a read_back check (see ParseVerdict).
+	VerdictShape
+)
+
 // Complete sends the system prompt followed by history, with the tool
-// definitions. withShape adds the mode instructions and the JSON reply shape,
-// for the requests of the user's own question; the reply text is then JSON
-// (see ParseReply). Without it, as for a single task, the reply is plain text.
+// definitions and the reply shape asked for.
 // It returns the reply text, the finish reason ("stop" for an answer,
 // "tool_calls" when the model wants tools run), and the tool calls.
-func (c Client) Complete(ctx context.Context, history []Message, withShape bool) (string, string, []ToolCall, error) {
+func (c Client) Complete(ctx context.Context, history []Message, shape Shape) (string, string, []ToolCall, error) {
 	messages := make([]Message, 0, 2+len(history))
 	messages = append(messages, Message{Role: "system", Content: SystemPrompt})
 	payload := request{Model: c.model, Tools: tools.Definitions}
-	if withShape {
+	switch shape {
+	case ModeShape:
 		messages = append(messages, Message{Role: "system", Content: ModePrompt})
 		payload.ResponseFormat = json.RawMessage(replyFormat)
+	case VerdictShape:
+		payload.ResponseFormat = json.RawMessage(verdictFormat)
 	}
 	payload.Messages = append(messages, history...)
 

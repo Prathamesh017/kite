@@ -19,7 +19,7 @@ func (m *Model) onQuestion(question string) tea.Cmd {
 	m.history = append(m.history, llm.Message{Role: "user", Content: question})
 	m.iterations, m.toolCalls = 0, 0
 	m.runCtx, m.cancelRun = context.WithTimeout(context.Background(), runTimeout)
-	return ask(m.runCtx, m.history, true)
+	return ask(m.runCtx, m.history, llm.ModeShape)
 }
 
 func (m *Model) showAnswer(answer string) tea.Cmd {
@@ -35,6 +35,7 @@ func (m *Model) cancel() {
 	m.history = append(m.history, llm.Message{Role: "assistant", Content: "(cancelled by the user before answering)"})
 	m.tasks.Clear()
 	m.taskHistory = nil
+	m.checking = false
 	m.activity.SetStatus("")
 	m.chat.Show("")
 }
@@ -43,6 +44,7 @@ func (m *Model) onTimeout() tea.Cmd {
 	m.releaseRun()
 	m.tasks.Clear()
 	m.taskHistory = nil
+	m.checking = false
 	question := m.activity.RemoveQuestion()
 	m.history = dropLastQuestion(m.history)
 	m.chat.Restore(question, "Request timed out, please try again.")
@@ -62,6 +64,9 @@ func (m *Model) onReply(msg replyMsg) tea.Cmd {
 	m.iterations++
 	if msg.finish == "tool_calls" && len(msg.calls) > 0 {
 		return m.onToolCalls(msg)
+	}
+	if m.checking {
+		return m.onVerdict(msg)
 	}
 	if m.tasks.Active() {
 		return m.onTaskAnswer(msg)
@@ -100,7 +105,7 @@ func (m *Model) onReplyError(msg replyMsg) tea.Cmd {
 	retryConfig := llm.RetryConfigFromEnv()
 	if !msg.final && llm.Retryable(msg.err) && retryConfig.Count > 0 {
 		m.activity.Retrying()
-		return retry(m.runCtx, *m.loopHistory(), retryConfig, !m.tasks.Active())
+		return retry(m.runCtx, *m.loopHistory(), retryConfig, m.shape())
 	}
 	if m.tasks.Active() {
 		return m.finishTask("The request failed: "+failText(msg.err), false)
@@ -130,7 +135,7 @@ func (m *Model) onToolsDone(msg toolsDoneMsg) tea.Cmd {
 		return m.stopLoop("Reached its execution-step limit before completing the task.")
 	}
 	m.activity.SetStatus("thinking")
-	return ask(m.runCtx, *history, !m.tasks.Active())
+	return ask(m.runCtx, *history, m.shape())
 }
 
 func (m *Model) stopLoop(note string) tea.Cmd {
@@ -145,6 +150,17 @@ func (m *Model) loopHistory() *[]llm.Message {
 		return &m.taskHistory
 	}
 	return &m.history
+}
+
+func (m *Model) shape() llm.Shape {
+	switch {
+	case m.checking:
+		return llm.VerdictShape
+	case m.tasks.Active():
+		return llm.NoShape
+	default:
+		return llm.ModeShape
+	}
 }
 
 const runTimeout = time.Minute

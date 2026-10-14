@@ -52,11 +52,12 @@ type Reply struct {
 }
 
 // Task is one step of a task-mode reply. Only the fields Kite uses are read:
-// the description to send, the new files it will create, and the policy that
-// decides whether it passed.
+// the description to send, the new files it will create, and the policy and
+// criteria that decide whether it passed.
 type Task struct {
 	ID                 string   `json:"id"`
 	Description        string   `json:"description"`
+	AcceptanceCriteria []string `json:"acceptance_criteria"`
 	Creates            []string `json:"creates"`
 	VerificationPolicy struct {
 		Type string `json:"type"`
@@ -70,4 +71,38 @@ func ParseReply(text string) (reply Reply, ok bool) {
 		return Reply{}, false
 	}
 	return reply, true
+}
+
+// verdictFormat is the reply shape of a read_back check.
+const verdictFormat = `{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "kite_verdict",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "verdict": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "message": { "type": "string" }
+      },
+      "required": ["verdict", "message"]
+    }
+  }
+}`
+
+// Verdict is a read_back check's reply. Message says what the files hold, or why the task fails.
+type Verdict struct {
+	Verdict string `json:"verdict"`
+	Message string `json:"message"`
+}
+
+// ParseVerdict reads the model's text as a Verdict. ok is false when the text
+// is not that JSON or the verdict is neither PASS nor FAIL.
+func ParseVerdict(text string) (verdict Verdict, ok bool) {
+	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &verdict); err != nil {
+		return Verdict{}, false
+	}
+	if verdict.Verdict != "PASS" && verdict.Verdict != "FAIL" {
+		return Verdict{}, false
+	}
+	return verdict, true
 }

@@ -46,9 +46,8 @@ func stopped(ctx context.Context) tea.Msg {
 }
 
 // ask sends the history, which ends with a question, a task, or tool results.
-// The system prompt is added inside the client. withShape adds the mode
-// instructions and the JSON reply shape, for the user's own question only.
-func ask(ctx context.Context, history []llm.Message, withShape bool) tea.Cmd {
+// The system prompt is added inside the client. shape is the reply shape asked for.
+func ask(ctx context.Context, history []llm.Message, shape llm.Shape) tea.Cmd {
 	sent := append([]llm.Message(nil), history...)
 	return func() (msg tea.Msg) {
 		step := "model request"
@@ -58,7 +57,7 @@ func ask(ctx context.Context, history []llm.Message, withShape bool) tea.Cmd {
 		if err != nil {
 			return replyMsg{err: err, final: true}
 		}
-		response, finish, calls, err := client.Complete(ctx, sent, withShape)
+		response, finish, calls, err := client.Complete(ctx, sent, shape)
 		if ctx.Err() != nil {
 			return stopped(ctx)
 		}
@@ -72,7 +71,7 @@ func ask(ctx context.Context, history []llm.Message, withShape bool) tea.Cmd {
 // retry sends the same history up to settings.Count more times. Before each
 // try it waits a random time up to the backoff cap. It stops early when an error
 // cannot be retried.
-func retry(ctx context.Context, history []llm.Message, retryConfig llm.Retry, withShape bool) tea.Cmd {
+func retry(ctx context.Context, history []llm.Message, retryConfig llm.Retry, shape llm.Shape) tea.Cmd {
 	sent := append([]llm.Message(nil), history...)
 	return func() (msg tea.Msg) {
 		step := "model request"
@@ -89,7 +88,7 @@ func retry(ctx context.Context, history []llm.Message, retryConfig llm.Retry, wi
 			case <-time.After(llm.RandomUpTo(llm.Backoff(attempt, retryConfig))):
 			}
 
-			response, finish, calls, err := client.Complete(ctx, sent, withShape)
+			response, finish, calls, err := client.Complete(ctx, sent, shape)
 			if ctx.Err() != nil {
 				return stopped(ctx)
 			}
