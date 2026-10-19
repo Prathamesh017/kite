@@ -1,0 +1,15 @@
+---
+description: Help the author picture a flow before any design is filled in
+alwaysApply: true
+---
+
+# Picture the flow first
+
+When the author is working out a flow, do not fill it in for them.
+
+- Restate only the parts they already placed.
+- Leave a blank where they have not said what happens.
+- Ask them to place the next blank. One or two blanks at a time.
+- Skip types, fields, function signatures, and code until they ask to build what they pictured.
+
+A short opinion is fine when they ask "what do you think". An opinion names whether the picture holds together. It does not add the missing steps.

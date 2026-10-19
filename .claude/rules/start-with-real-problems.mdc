@@ -1,0 +1,41 @@
+---
+description: Design based on real problems from the code, not abstract concepts
+alwaysApply: true
+---
+
+# Start With Real Problems
+
+Don't design from theory. Design from observation.
+
+When starting a feature or phase:
+
+1. **Identify the real problem** from the actual code and flow
+   - Run a task, see what fails or wastes effort
+   - Read flow.md to understand current architecture
+   - Trace through concrete scenarios
+   - Don't assume problems; observe them
+
+2. **Picture the flow** showing the problem
+   - Current state: what happens now?
+   - Desired state: what should happen?
+   - Where does it break?
+
+3. **Ask design questions** one at a time
+   - Based on the real problem, not theory
+   - Wait for answers before moving on
+   - Let corrections reshape the design
+
+4. **Document the design** before building
+   - Save to `/docs/phase*-design.md`
+   - Record decisions and why they were made
+   - Include the real problem it solves
+
+**Example:**
+```
+Bad: "We should add semantic search to memory because it's more sophisticated"
+
+Good: "Agent re-reads main.go in Task 1 and Task 2 (observed waste).
+       We'll save a summary so Task 2 doesn't have to re-read.
+       Semantic search can come later if summaries aren't relevant enough."
+```
+
