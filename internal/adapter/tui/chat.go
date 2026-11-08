@@ -55,3 +55,4 @@ func (c Chat) errorRows(width, maxRows int) []string {
 	}
 	return rows
 }
+

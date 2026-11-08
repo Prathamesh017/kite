@@ -63,10 +63,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case cursorTickMsg:
+		m.chat.cursorOn = !m.chat.cursorOn
+		return m, tickCursor()
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch msg.String() {
+		case "ctrl+c":
 			return m, tea.Quit
+		
+		case "ctrl+t":
+			m.setTheme((m.theme + 1) % len(themes))
+			return m, nil
 		}
+		m.chat.HandleKey(msg);
+	
+		
+
 	}
 	return m, nil
 }
