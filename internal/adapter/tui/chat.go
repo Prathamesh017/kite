@@ -15,7 +15,7 @@ type Chat struct {
 	input     string // what the user is typing
 	errorText string // why the last question failed
 	cursorOn  bool   // the blinking bar, on or off
-	busy 	bool   // true while a reply is in flight
+	busy      bool   // true while a reply is in flight
 }
 
 // View draws the pane, top to bottom: title, error rows, input line.

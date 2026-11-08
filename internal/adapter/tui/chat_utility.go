@@ -6,9 +6,9 @@ import (
 )
 
 func (c *Chat) HandleKey(msg tea.KeyMsg) string {
-	// if c.busy {
-	// 	return ""
-	// }
+	if c.busy {
+		return ""
+	}
 	switch msg.Type {
 	case tea.KeyEnter:
 		text := strings.TrimSpace(c.input)
@@ -16,7 +16,8 @@ func (c *Chat) HandleKey(msg tea.KeyMsg) string {
 		if text == "" {
 			return ""
 		}
-		// c.busy = true
+		c.errorText = ""
+		c.busy = true
 		return text
 	case tea.KeyBackspace, tea.KeyDelete:
 		r := []rune(c.input)
@@ -29,13 +30,6 @@ func (c *Chat) HandleKey(msg tea.KeyMsg) string {
 		c.input += string(msg.Runes)
 	}
 	return ""
-}
-
-
-func (c *Chat) Show(text string) {
-	c.busy = false
-	c.input=text;
-	// c.errorText = text
 }
 
 // Restore puts a failed question back in the input, with the reason above it.

@@ -12,13 +12,13 @@ type Model struct {
 	width  int
 	height int
 	// theme is the index into themes.
-	theme  int
-	header Header
-	chat   Chat
-	kite   core.Kite
+	theme    int
+	header   Header
+	activity Activity
+	chat     Chat
+	kite     core.Kite
 
 	// header   Header
-	// activity Activity
 	// tasks    TaskList
 	// terminal Terminal
 	// chat     Chat
@@ -69,6 +69,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case cursorTickMsg:
 		m.chat.cursorOn = !m.chat.cursorOn
 		return m, tickCursor()
+	case shimmerTickMsg:
+		m.activity.Shimmer()
+		return m, tickShimmer()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -79,13 +82,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		//checking and sending to core
 		if question := m.chat.HandleKey(msg); question != "" {
+			m.activity.pending = question
+			m.activity.status = StatusThinking
 			return m, askKite(m.kite, question)
 		}
 	case kiteReplyMsg:
+		question := m.activity.pending
+		m.chat.busy = false
+		m.activity.pending = ""
+		m.activity.status = StatusIdle
 		if msg.err != nil {
-			m.chat.Restore(m.chat.input, msg.err.Error())
+			m.chat.Restore(question, msg.err.Error())
 		} else {
-			m.chat.Show(msg.reply)
+			m.activity.conversations = append(m.activity.conversations,
+				core.Message{Role: "user", Message: question},
+				core.Message{Role: "assistant", Message: msg.reply},
+			)
 		}
 	}
 
@@ -101,8 +113,7 @@ func (m Model) View() string {
 	//gets respective height for each section
 	headerH, bodyH, footerH := splitHeight(m.height)
 	header := m.header.View(m.width, headerH)
-	// The middle band is empty until the activity pane exists. It keeps the chat at the bottom.
-	body := lipgloss.NewStyle().Height(bodyH).Render("")
+	body := m.activity.View(m.width, bodyH)
 
 	footer := m.chat.View(m.width, footerH)
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)

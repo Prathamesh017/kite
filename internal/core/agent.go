@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"slices"
 )
 
 type Agent struct {
@@ -19,12 +20,13 @@ func NewAgent(llm LLM) *Agent {
 const systemPrompt = "You are a helpful assistant. Answer the questions as best as you can."
 
 func (a *Agent) Ask(ctx context.Context, question string) (string, error) {
-	a.history = append(a.history, Message{Role: "user", Message: question})
-	reply, err := a.llm.Complete(ctx, systemPrompt, a.history)
+	user := Message{Role: "user", Message: question}
+	reply, err := a.llm.Complete(ctx, systemPrompt, append(slices.Clone(a.history), user))
 	if err != nil {
 		return "", err
 	}
 
-	a.history = append(a.history, Message{Role: "assistant", Message: reply})
+	// The exchange is stored only once it succeeded, so a failed question never enters the history.
+	a.history = append(a.history, user, Message{Role: "assistant", Message: reply})
 	return reply, nil
 }
