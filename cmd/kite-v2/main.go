@@ -1,12 +1,12 @@
 package main
 
 import (
-	"os"
-	"strings"
-
 	gemini "kite/internal/adapter/gemini"
+	tools "kite/internal/adapter/tools"
 	tui "kite/internal/adapter/tui"
 	core "kite/internal/core"
+	"os"
+	"strings"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 		panic(err)
 	}
 	//here it satisfied as geminiClient has implemented the core.LLM interface  as it has complete method
-	kite := core.NewAgent(geminiClient)
+	kite := core.NewAgent(geminiClient, tools.Tools{})
 	tui.Init(kite)
 }
 

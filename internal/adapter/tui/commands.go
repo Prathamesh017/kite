@@ -18,6 +18,8 @@ type kiteReplyMsg struct {
 func askKite(kite core.Kite, question string) tea.Cmd {
 	return func() tea.Msg {
 		reply, err := kite.Ask(context.Background(), question)
+
+		//Here to need if it tool call or regular message
 		return kiteReplyMsg{reply: reply, err: err}
 	}
 }
