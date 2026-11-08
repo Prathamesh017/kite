@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type Model struct {
@@ -12,6 +13,7 @@ type Model struct {
 	// theme is the index into themes.
 	theme  int
 	header Header
+	chat   Chat
 
 	// header   Header
 	// activity Activity
@@ -23,6 +25,7 @@ type Model struct {
 func New() Model {
 	m := Model{
 		header: Header{cwd: workingDir()},
+		chat:   Chat{cursorOn: true},
 	}
 	m.setTheme(0)
 	return m
@@ -69,5 +72,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	return m.header.View(m.width, m.height)
+	// Bubble Tea asks for a view before the first size message.
+	if m.width == 0 || m.height == 0 {
+		return ""
+	}
+
+	//gets respective height for each section
+	headerH, bodyH, footerH := splitHeight(m.height)
+	header := m.header.View(m.width, headerH)
+	// The middle band is empty until the activity pane exists. It keeps the chat at the bottom.
+	body := lipgloss.NewStyle().Height(bodyH).Render("")
+	
+	footer := m.chat.View(m.width, footerH)
+	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 }
