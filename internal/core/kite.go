@@ -1,7 +1,10 @@
 package core
 
-// list of things our core provides any web interface can use
-type Kite interface {
-	Ask(question string) (string, error)
+import (
+	"context"
+)
 
+// Kite is what the core offers to any interface that wants to use it.
+type Kite interface {
+	Ask(ctx context.Context, question string) (string, error)
 }

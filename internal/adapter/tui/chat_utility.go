@@ -1,13 +1,9 @@
 package tui
 
 import (
-	"strings"
 	tea "github.com/charmbracelet/bubbletea"
-
+	"strings"
 )
-
-
-
 
 func (c *Chat) HandleKey(msg tea.KeyMsg) string {
 	// if c.busy {
@@ -33,4 +29,18 @@ func (c *Chat) HandleKey(msg tea.KeyMsg) string {
 		c.input += string(msg.Runes)
 	}
 	return ""
+}
+
+
+func (c *Chat) Show(text string) {
+	c.busy = false
+	c.input=text;
+	// c.errorText = text
+}
+
+// Restore puts a failed question back in the input, with the reason above it.
+func (c *Chat) Restore(question, reason string) {
+	c.busy = false
+	c.input = question
+	c.errorText = reason
 }

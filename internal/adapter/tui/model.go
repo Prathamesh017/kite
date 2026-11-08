@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	core "kite/internal/core"
 )
 
 type Model struct {
@@ -14,6 +15,7 @@ type Model struct {
 	theme  int
 	header Header
 	chat   Chat
+	kite   core.Kite
 
 	// header   Header
 	// activity Activity
@@ -22,10 +24,11 @@ type Model struct {
 	// chat     Chat
 }
 
-func New() Model {
+func New(kite core.Kite) Model {
 	m := Model{
 		header: Header{cwd: workingDir()},
 		chat:   Chat{cursorOn: true},
+		kite:   kite,
 	}
 	m.setTheme(0)
 	return m
@@ -70,16 +73,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
-		
 		case "ctrl+t":
 			m.setTheme((m.theme + 1) % len(themes))
 			return m, nil
 		}
-		m.chat.HandleKey(msg);
-	
-		
-
+		//checking and sending to core
+		if question := m.chat.HandleKey(msg); question != "" {
+			return m, askKite(m.kite, question)
+		}
+	case kiteReplyMsg:
+		if msg.err != nil {
+			m.chat.Restore(m.chat.input, msg.err.Error())
+		} else {
+			m.chat.Show(msg.reply)
+		}
 	}
+
 	return m, nil
 }
 
@@ -94,7 +103,7 @@ func (m Model) View() string {
 	header := m.header.View(m.width, headerH)
 	// The middle band is empty until the activity pane exists. It keeps the chat at the bottom.
 	body := lipgloss.NewStyle().Height(bodyH).Render("")
-	
+
 	footer := m.chat.View(m.width, footerH)
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 }
