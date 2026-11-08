@@ -15,6 +15,11 @@ tasks:
      cmds:  
        - go run ./cmd/main.go
      silent: true
+  run-v2:
+     desc: Run the KI Agent v2 (ports and adapters refactor)
+     cmds:
+       - go run ./cmd/kite-v2
+     silent: true
   debug:
      desc: Run the KI Agent under the debugger (attach with "Attach to kite")
      cmds:
