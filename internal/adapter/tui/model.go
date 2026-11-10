@@ -21,6 +21,7 @@ type Model struct {
 	header   Header
 	activity Activity
 	chat     Chat
+	tasks    TaskList
 	kite     core.Kite
 
 	// runCtx is the running question's context, sent with every step of that run.
@@ -29,7 +30,6 @@ type Model struct {
 	cancelRun context.CancelFunc
 
 	// header   Header
-	// tasks    TaskList
 	// terminal Terminal
 	// chat     Chat
 }
@@ -84,6 +84,7 @@ func (m *Model) cancel() {
 	m.activity.pending = ""
 	m.activity.steps = nil
 	m.activity.status = StatusIdle
+	m.tasks.Clear()
 	m.chat.busy = false
 }
 
@@ -137,6 +138,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.activity.steps = append(m.activity.steps, core.Message{Role: "tool", Message: call.Name})
 				}
 				m.activity.status = StatusThinking
+			case core.TasksCreated:
+				m.tasks.Start(msg.result.Tasks)
+				m.activity.status = StatusCreatingTasks
 			}
 			return m, runNextStep(m.runCtx, m.kite)
 		}
@@ -148,6 +152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activity.pending = ""
 		m.activity.steps = nil
 		m.activity.status = StatusIdle
+		m.tasks.Clear()
 		if timedOut {
 			m.chat.Restore(question, "Request timed out, please try again.")
 		} else if msg.err != nil {
@@ -171,7 +176,11 @@ func (m Model) View() string {
 	//gets respective height for each section
 	headerH, bodyH, footerH := splitHeight(m.height)
 	header := m.header.View(m.width, headerH)
-	body := m.activity.View(m.width, bodyH)
+	activityH := m.activityHeight()
+	body := m.activity.View(m.width, activityH)
+	if m.tasks.Active() {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, m.tasks.View(m.width, bodyH-activityH))
+	}
 
 	footer := m.chat.View(m.width, footerH)
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)

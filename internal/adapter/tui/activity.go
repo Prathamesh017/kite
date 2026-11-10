@@ -31,7 +31,8 @@ type Status int
 const (
 	StatusIdle Status = iota
 	StatusThinking
-	StatusTool // a tool is about to run, and detail says which
+	StatusTool          // a tool is about to run, and detail says which
+	StatusCreatingTasks // the model broke the request into tasks
 )
 
 // statusText is the text shown for the status.
@@ -41,6 +42,8 @@ func (a Activity) statusText() string {
 		return "thinking"
 	case StatusTool:
 		return a.detail
+	case StatusCreatingTasks:
+		return "creating todo list"
 	}
 	return ""
 }

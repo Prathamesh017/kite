@@ -11,6 +11,16 @@ const (
 	minBodyHeight = 5
 )
 
+// activityHeight is the middle band, less the task list while there are tasks.
+// The list takes at most half the band, so Activity stays readable.
+func (m Model) activityHeight() int {
+	_, bodyH, _ := splitHeight(m.height)
+	if !m.tasks.Active() {
+		return bodyH
+	}
+	return bodyH - min(m.tasks.Height(), bodyH/2)
+}
+
 // splitHeight gives the header a fixed bar, the chat about a third of what
 // remains, and the middle band everything left over.
 func splitHeight(height int) (header, body, footer int) {

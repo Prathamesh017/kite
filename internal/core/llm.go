@@ -22,10 +22,14 @@ type Message struct {
 	ToolCalls  []ToolCall // set when the model asks to run tools instead of answering
 	ToolCallID string     // set on a "tool" message: the call it answers
 }
+type ReplyFormat struct {
+	Name   string
+	Schema json.RawMessage
+}
 
 /*
 His
 */
 type LLM interface {
-	Complete(ctx context.Context, systemPrompt string, history []Message, tools []ToolSpec) (Message, error)
+	Complete(ctx context.Context, systemPrompt string, history []Message, tools []ToolSpec, format *ReplyFormat) (Message, error)
 }

@@ -46,9 +46,19 @@ type message struct {
 }
 
 type request struct {
-	Model    string    `json:"model"`
-	Messages []message `json:"messages"`
-	Tools    []tool    `json:"tools,omitempty"`
+	Model          string          `json:"model"`
+	Messages       []message       `json:"messages"`
+	Tools          []tool          `json:"tools,omitempty"`
+	ResponseFormat *responseFormat `json:"response_format,omitempty"`
+}
+
+// responseFormat asks the model to answer in a JSON shape.
+type responseFormat struct {
+	Type       string `json:"type"`
+	JSONSchema struct {
+		Name   string          `json:"name"`
+		Schema json.RawMessage `json:"schema"`
+	} `json:"json_schema"`
 }
 
 // tool is one tool in the provider's format.
@@ -83,7 +93,7 @@ type response struct {
 	} `json:"choices"`
 }
 
-func (c Client) Complete(ctx context.Context, systemPrompt string, history []core.Message, specs []core.ToolSpec) (core.Message, error) {
+func (c Client) Complete(ctx context.Context, systemPrompt string, history []core.Message, specs []core.ToolSpec, format *core.ReplyFormat) (core.Message, error) {
 	messages := []message{{Role: "system", Content: systemPrompt}}
 	for _, m := range history {
 		wire := message{Role: m.Role, Content: m.Message, ToolCallID: m.ToolCallID}
@@ -104,7 +114,14 @@ func (c Client) Complete(ctx context.Context, systemPrompt string, history []cor
 		})
 	}
 
-	body, err := json.Marshal(request{Model: c.model, Messages: messages, Tools: tools})
+	var wire *responseFormat
+	if format != nil {
+		wire = &responseFormat{Type: "json_schema"}
+		wire.JSONSchema.Name = format.Name
+		wire.JSONSchema.Schema = format.Schema
+	}
+
+	body, err := json.Marshal(request{Model: c.model, Messages: messages, Tools: tools, ResponseFormat: wire})
 	if err != nil {
 		return core.Message{}, err
 	}

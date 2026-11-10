@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"strconv"
@@ -20,6 +21,7 @@ type Agent struct {
 type run struct {
 	messages       []Message  // the history, this question, and everything since
 	toolCallsToRun []ToolCall // tool calls the model asked for that have not run yet
+	tasks          []Task     // the tasks the model broke the request into
 	iterations     int        // model replies that asked for tools in this run
 	toolCalls      int        // tools run in this run
 }
@@ -42,6 +44,10 @@ func (a *Agent) Ask(ctx context.Context, question string) (Result, error) {
 func (a *Agent) Step(ctx context.Context) (Result, error) {
 	if a.run == nil {
 		return Result{}, errors.New("no question is being answered")
+	}
+	if len(a.run.tasks) > 0 {
+		// Running the tasks is not built yet, so the run ends here.
+		return a.stop(fmt.Sprintf("The model split the request into %d tasks. Running tasks is not built yet.", len(a.run.tasks))), nil
 	}
 	if len(a.run.toolCallsToRun) > 0 {
 		if len(a.run.toolCallsToRun) > toolCallLimit()-a.run.toolCalls {
@@ -79,25 +85,30 @@ func envInt(key string, fallback int) int {
 
 // askModel sends the run's messages to the model and reports what it replied.
 func (a *Agent) askModel(ctx context.Context) (Result, error) {
-	reply, err := a.llm.Complete(ctx, SystemPrompt, a.run.messages, a.tools.Specs())
+	reply, err := a.llm.Complete(ctx, SystemPrompt+"\n\n"+ReplyPrompt, a.run.messages, a.tools.Specs(), replyFormat)
 	if err != nil {
 		// The run is dropped and the history is untouched, so a failed question never enters it.
 		a.run = nil
 		return Result{}, err
 	}
+	mode, parsed := parseReply(reply)
 
-	switch {
-	case len(reply.ToolCalls) > 0:
+	switch mode {
+	case ModeToolCall:
 		a.run.iterations++
 		a.run.messages = append(a.run.messages, reply)
 		a.run.toolCallsToRun = reply.ToolCalls
 		return Result{Kind: AskedForTool, Tools: reply.ToolCalls}, nil
-	// case task: how a task reply is recognised is not decided yet.
-	default:
-		a.history = append(a.run.messages, reply)
+	case ModeTask:
+		a.run.tasks = parsed.Tasks
+		return Result{Kind: TasksCreated, Tasks: parsed.Tasks}, nil
+	case ModeAnswer:
+		// The history keeps the answer, not the JSON around it.
+		a.history = append(a.run.messages, Message{Role: "assistant", Message: parsed.Answer})
 		a.run = nil
-		return Result{Kind: Answered, Answer: reply.Message}, nil
+		return Result{Kind: Answered, Answer: parsed.Answer}, nil
 	}
+	return Result{}, fmt.Errorf("unknown reply mode %d", mode)
 }
 
 // runTools runs the tool calls the model asked for. Each call gets a result

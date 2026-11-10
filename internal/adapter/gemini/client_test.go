@@ -28,7 +28,7 @@ func TestCompleteSendsToolsAndReadsToolCalls(t *testing.T) {
 		Parameters:  json.RawMessage(`{"type":"object"}`),
 	}}
 
-	reply, err := client.Complete(context.Background(), "system", []core.Message{{Role: "user", Message: "hi"}}, specs)
+	reply, err := client.Complete(context.Background(), "system", []core.Message{{Role: "user", Message: "hi"}}, specs, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestCompleteWithoutToolsOmitsThem(t *testing.T) {
 	defer server.Close()
 
 	client := Client{key: "k", model: "m", url: server.URL}
-	reply, err := client.Complete(context.Background(), "system", nil, nil)
+	reply, err := client.Complete(context.Background(), "system", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

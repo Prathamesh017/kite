@@ -7,6 +7,7 @@ const (
 	AskedForTool Kind = iota // the model asked to run tools
 	ToolRan                  // the tools ran, and their results wait for the next model call
 	Answered                 // the model gave its answer, the run is finished
+	TasksCreated             // the model broke the request into tasks
 )
 
 // Result is what Ask and Step report. The run is finished when Kind is Answered.
@@ -15,4 +16,5 @@ type Result struct {
 	Kind   Kind
 	Tools  []ToolCall // AskedForTool: the calls the model asked for. ToolRan: the calls that ran.
 	Answer string     // Answered: the answer text
+	Tasks  []Task     // TasksCreated: the tasks, in the order they will run
 }
