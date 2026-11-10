@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-10
+
+A refactor: Kite is rebuilt on hexagonal architecture (ports and adapters). It does the same things as 0.1.0, except for the changes below.
+
+### Changed
+
+- The agent moved out of the terminal UI into a core that knows no UI, no model provider and no filesystem. The UI, the model client and the file tools plug into it through three ports. The README has a diagram.
+- The agent works step by step. One call starts a question, and the UI keeps asking for the next step until the answer. Tool progress, task progress and retries reach the screen this way.
+- The model's reply format is simpler: an answer, or a list of tasks. A `read_back` check replies with a yes or no instead of PASS or FAIL.
+- When all tasks pass, the answer is the list of tasks with each reply indented under its task ("2 of 2 tasks passed"). It is no longer a one-line summary written by the model, and the "summarizing" status is gone.
+
+### Fixed
+
+- Tool calls no longer fail with a 400 error on Gemini 3 models ("missing a thought_signature").
+- A rejected model request now shows the provider's own message, not only the status code.
+
+### Removed
+
+- The code of the earlier version, with its tests. Tests for the new core are still to be written.
+
 ## [0.1.0] - 2026-10-14
 
 Phase 1: from LLM to coding agent.
@@ -31,5 +51,6 @@ Phase 1: from LLM to coding agent.
 - `read_file` refuses `.env`, `.env.*`, `*.pem`, and anything under `.git/`, including through symlinks.
 - `write_file` only creates new files inside the workspace and never overwrites.
 
-[Unreleased]: https://github.com/Prathamesh017/KITE/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Prathamesh017/KITE/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Prathamesh017/KITE/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Prathamesh017/KITE/releases/tag/v0.1.0
