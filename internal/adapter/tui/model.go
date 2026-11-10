@@ -1,12 +1,17 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	core "kite/internal/core"
 )
+
+// runTimeout is how long one question may take, from the question to the answer.
+const runTimeout = time.Minute
 
 type Model struct {
 	width  int
@@ -17,6 +22,11 @@ type Model struct {
 	activity Activity
 	chat     Chat
 	kite     core.Kite
+
+	// runCtx is the running question's context, sent with every step of that run.
+	// cancelRun cancels it. Both are nil when nothing runs.
+	runCtx    context.Context
+	cancelRun context.CancelFunc
 
 	// header   Header
 	// tasks    TaskList
@@ -58,6 +68,25 @@ func tickCursor() tea.Cmd {
 	})
 }
 
+// releaseRun cancels the running question's context, which frees it, and forgets it.
+func (m *Model) releaseRun() {
+	if m.cancelRun != nil {
+		m.cancelRun()
+	}
+	m.runCtx, m.cancelRun = nil, nil
+}
+
+// cancel stops the running question. What the pane already showed stays, without an answer.
+func (m *Model) cancel() {
+	m.releaseRun()
+	m.activity.conversations = append(m.activity.conversations, core.Message{Role: "user", Message: m.activity.pending})
+	m.activity.conversations = append(m.activity.conversations, m.activity.steps...)
+	m.activity.pending = ""
+	m.activity.steps = nil
+	m.activity.status = StatusIdle
+	m.chat.busy = false
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(tickCursor(), tickShimmer())
 }
@@ -76,17 +105,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "esc":
+			if m.cancelRun != nil {
+				m.cancel()
+			}
+			return m, nil
 		case "ctrl+t":
 			m.setTheme((m.theme + 1) % len(themes))
 			return m, nil
 		}
 		//checking and sending to core
 		if question := m.chat.HandleKey(msg); question != "" {
+			m.runCtx, m.cancelRun = context.WithTimeout(context.Background(), runTimeout)
 			m.activity.pending = question
 			m.activity.status = StatusThinking
-			return m, askKite(m.kite, question)
+			return m, askKite(m.runCtx, m.kite, question)
 		}
 	case kiteStepMsg:
+		// A step that lands after Esc belongs to a run that is already gone.
+		if m.cancelRun == nil {
+			return m, nil
+		}
 		// The run is not finished yet, so show what happened and ask for its next step.
 		if msg.err == nil && msg.result.Kind != core.Answered {
 			switch msg.result.Kind {
@@ -99,15 +138,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.activity.status = StatusThinking
 			}
-			return m, runNextStep(m.kite)
+			return m, runNextStep(m.runCtx, m.kite)
 		}
 		question := m.activity.pending
 		steps := m.activity.steps
+		timedOut := errors.Is(m.runCtx.Err(), context.DeadlineExceeded)
+		m.releaseRun()
 		m.chat.busy = false
 		m.activity.pending = ""
 		m.activity.steps = nil
 		m.activity.status = StatusIdle
-		if msg.err != nil {
+		if timedOut {
+			m.chat.Restore(question, "Request timed out, please try again.")
+		} else if msg.err != nil {
 			m.chat.Restore(question, msg.err.Error())
 		} else {
 			m.activity.conversations = append(m.activity.conversations, core.Message{Role: "user", Message: question})

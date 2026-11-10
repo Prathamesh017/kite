@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"kite/internal/core"
 )
@@ -20,6 +20,8 @@ type Client struct {
 	key   string
 	model string
 	url   string
+	http  *http.Client // nil means http.DefaultClient
+	retry retry
 }
 
 func FromEnv() (Client, error) {
@@ -27,6 +29,8 @@ func FromEnv() (Client, error) {
 		key:   os.Getenv("API_KEY"),
 		model: os.Getenv("TEXT_MODEL_NAME"),
 		url:   os.Getenv("API_URL"),
+		http:  &http.Client{Timeout: requestTimeout()},
+		retry: retryFromEnv(),
 	}
 	if c.key == "" || c.model == "" || c.url == "" {
 		return Client{}, errors.New("set API_KEY, TEXT_MODEL_NAME, and API_URL in .env")
@@ -105,27 +109,18 @@ func (c Client) Complete(ctx context.Context, systemPrompt string, history []cor
 		return core.Message{}, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	reply, err := c.send(ctx, body)
+	// A failure that might pass is sent again, up to the retry count, waiting a
+	// little longer each time. It stops early when the error cannot be retried.
+	for attempt := 0; err != nil && retryable(err) && attempt < c.retry.count; attempt++ {
+		select {
+		case <-ctx.Done():
+			return core.Message{}, ctx.Err()
+		case <-time.After(randomUpTo(backoff(attempt, c.retry))):
+		}
+		reply, err = c.send(ctx, body)
+	}
 	if err != nil {
-		return core.Message{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.key)
-	req.Header.Set("Content-Type", "application/json")
-
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return core.Message{}, err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		// The body says why the request was rejected, so keep the start of it.
-		detail, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		return core.Message{}, fmt.Errorf("model returned %d: %s", res.StatusCode, strings.TrimSpace(string(detail)))
-	}
-
-	var reply response
-	if err := json.NewDecoder(res.Body).Decode(&reply); err != nil {
 		return core.Message{}, err
 	}
 	if len(reply.Choices) == 0 {
@@ -142,4 +137,36 @@ func (c Client) Complete(ctx context.Context, systemPrompt string, history []cor
 		})
 	}
 	return out, nil
+}
+
+// send makes one request. A reply other than 200 comes back as an *APIError.
+func (c Client) send(ctx context.Context, body []byte) (response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return response{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.key)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := c.http
+	if client == nil {
+		client = http.DefaultClient
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return response{}, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		// The body says why the request was rejected, so keep the start of it.
+		detail, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return response{}, &APIError{Status: res.StatusCode, Message: strings.TrimSpace(string(detail))}
+	}
+
+	var reply response
+	if err := json.NewDecoder(res.Body).Decode(&reply); err != nil {
+		return response{}, err
+	}
+	return reply, nil
 }
