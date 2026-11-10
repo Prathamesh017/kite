@@ -8,7 +8,7 @@ import (
 // ReplyPrompt is added to the system prompt for the user's own question, next to
 // the reply format. It tells the model when to answer and when to break the request into tasks.
 const ReplyPrompt = `Answer in the JSON shape. Before calling any tool, decide which kind of request this is:
-1. A task: the request asks for several separate steps, for example reading or changing more than one file, or doing one thing and then another. Put the steps in "tasks" and set "answer" to null. Do not call tools yet. Each task is run on its own and only sees its description and the results of the tasks before it, so write each description so it can be done from that alone. In "creates", list the path of every new file the task will create, or [] if it creates none.
+1. A task: the request asks for several separate steps, for example reading or changing more than one file, or doing one thing and then another. Put the steps in "tasks" and set "answer" to null. Do not call tools yet. Each task is run on its own and only sees its description and the results of the tasks before it, so write each description so it can be done from that alone. In "creates", list the path of every new file the task will create, or [] if it creates none. Choose each task's "verification_policy": "none" when nothing needs checking, for example the task only reads or explains; "tool_result" when it passes as long as its tools do not fail; "read_back" when the task creates files and a check should read them back and compare them with "acceptance_criteria". For "read_back", list in "acceptance_criteria" what the files must contain. Otherwise set it to [].
 2. Anything else, including a request that none of your tools can do. If you need one file to answer, call a tool. When you can answer, put the answer in "answer" and set "tasks" to []. If none of your tools can do what is asked, say so in "answer".`
 
 // replyFormat is the shape the model answers the user's question in: an answer, or a list of tasks.
@@ -24,9 +24,11 @@ var replyFormat = &ReplyFormat{
         "type": "object",
         "properties": {
           "description": { "type": "string" },
-          "creates": { "type": "array", "items": { "type": "string" } }
+          "creates": { "type": "array", "items": { "type": "string" } },
+          "verification_policy": { "type": "string", "enum": ["none", "tool_result", "read_back"] },
+          "acceptance_criteria": { "type": "array", "items": { "type": "string" } }
         },
-        "required": ["description", "creates"]
+        "required": ["description", "creates", "verification_policy", "acceptance_criteria"]
       }
     }
   },
@@ -40,10 +42,20 @@ type Reply struct {
 	Tasks  []Task `json:"tasks"`
 }
 
-// Task is one task: what to do, and the new files it will create.
+// How a task is checked once the model has given its reply.
+const (
+	policyNone       = "none"        // nothing to check
+	policyToolResult = "tool_result" // passes as long as its tools did not fail
+	policyReadBack   = "read_back"   // a check reads the created files and compares them with the acceptance criteria
+)
+
+// Task is one task: what to do, the new files it will create, and how it is checked.
+// AcceptanceCriteria is only used by the read_back check.
 type Task struct {
-	Description string   `json:"description"`
-	Creates     []string `json:"creates"`
+	Description        string   `json:"description"`
+	Creates            []string `json:"creates"`
+	VerificationPolicy string   `json:"verification_policy"`
+	AcceptanceCriteria []string `json:"acceptance_criteria"`
 }
 
 // Mode is what the model's reply is.

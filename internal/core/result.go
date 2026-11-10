@@ -9,6 +9,7 @@ const (
 	Answered                 // the model gave its answer, the run is finished
 	TasksCreated             // the model broke the request into tasks
 	TaskStarted              // a task begins
+	TaskChecking             // the task's reply is accepted, and a read_back check of its files begins
 	TaskFinished             // a task ended, passed or failed
 )
 
@@ -19,6 +20,6 @@ type Result struct {
 	Tools  []ToolCall // AskedForTool: the calls the model asked for. ToolRan: the calls that ran.
 	Answer string     // Answered: the answer text
 	Tasks  []Task     // TasksCreated: the tasks, in the order they will run
-	Task   int        // TaskStarted, TaskFinished: which task, counting from 0
+	Task   int        // TaskStarted, TaskChecking, TaskFinished: which task, counting from 0
 	Passed bool       // TaskFinished: whether the task passed
 }

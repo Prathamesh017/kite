@@ -32,6 +32,7 @@ type run struct {
 
 	// Only in a task's own run.
 	toolErrors map[string]string // the last error result of each tool, cleared by a later success
+	checking   bool              // this run is the read_back check of the task, not the task itself
 }
 
 func NewAgent(llm LLM, tools Tools) *Agent {

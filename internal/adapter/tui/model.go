@@ -145,6 +145,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case core.TaskStarted:
 				m.tasks.Running(msg.result.Task)
 				m.activity.status = StatusThinking
+			case core.TaskChecking:
+				m.activity.status = StatusChecking
 			case core.TaskFinished:
 				m.tasks.Finish(msg.result.Task, msg.result.Passed)
 				if msg.result.Passed {

@@ -76,8 +76,12 @@ func (a *Agent) stepTask(ctx context.Context) (Result, error) {
 		return a.finishTask(false, "Reached its execution-step limit before completing the task."), nil
 	}
 
-	// A task answers in plain text, so there is no reply format.
-	reply, err := a.llm.Complete(ctx, SystemPrompt, r.messages, a.tools.Specs(), nil)
+	// A task answers in plain text, so there is no reply format. A check answers with a verdict.
+	var format *ReplyFormat
+	if r.checking {
+		format = verdictFormat
+	}
+	reply, err := a.llm.Complete(ctx, SystemPrompt, r.messages, a.tools.Specs(), format)
 	if err != nil {
 		if ctx.Err() != nil {
 			// Cancel and timeouts are for the caller to handle.
@@ -93,12 +97,66 @@ func (a *Agent) stepTask(ctx context.Context) (Result, error) {
 		return Result{Kind: AskedForTool, Tools: reply.ToolCalls}, nil
 	}
 
-	// The model's plain reply ends the task. It passed unless a tool failed.
-	if len(r.toolErrors) > 0 {
-		failed := strings.Join(slices.Sorted(maps.Values(r.toolErrors)), "; ")
-		return a.finishTask(false, "A tool failed: "+failed+"\n"+reply.Message), nil
+	// The model's reply ends the task, or the check of it.
+	if r.checking {
+		return a.judgeCheck(r, reply.Message), nil
 	}
-	return a.finishTask(true, reply.Message), nil
+	return a.judgeTask(r, reply.Message), nil
+}
+
+// judgeTask decides whether a task passed, from the model's plain reply and the task's verification policy.
+func (a *Agent) judgeTask(r *run, answer string) Result {
+	policy := a.run.tasks[a.run.current].task.VerificationPolicy
+	if policy != policyNone && len(r.toolErrors) > 0 {
+		return a.finishTask(false, "A tool failed: "+failedTools(r)+"\n"+answer)
+	}
+	if policy == policyReadBack {
+		return a.startCheck()
+	}
+	return a.finishTask(true, answer)
+}
+
+// startCheck begins the read_back check of the current task, in a run of its own.
+func (a *Agent) startCheck() Result {
+	i := a.run.current
+	a.run.task = &run{
+		messages:   []Message{{Role: "user", Message: a.checkPrompt(i)}},
+		toolErrors: map[string]string{},
+		checking:   true,
+	}
+	return Result{Kind: TaskChecking, Task: i}
+}
+
+// checkPrompt asks the model to read back what the task created and give a yes or no.
+func (a *Agent) checkPrompt(i int) string {
+	task := a.run.tasks[i].task
+	files := "none listed"
+	if len(task.Creates) > 0 {
+		files = strings.Join(task.Creates, ", ")
+	}
+	return "Check the result of this task. Read the files it created with read_file and " +
+		"compare them with the acceptance criteria. Do not write files.\n\n" +
+		"Task: " + task.Description + "\n\n" +
+		"Acceptance criteria:\n- " + strings.Join(task.AcceptanceCriteria, "\n- ") + "\n\n" +
+		"Files it created: " + files + "\n\n" +
+		"Reply with passed true or false. In message, say in one line what the files hold, or why the task fails."
+}
+
+// judgeCheck ends the task from the check's verdict.
+func (a *Agent) judgeCheck(r *run, text string) Result {
+	verdict, ok := parseVerdict(text)
+	switch {
+	case !ok:
+		return a.finishTask(false, "The read_back check did not return a verdict.")
+	case len(r.toolErrors) > 0:
+		return a.finishTask(false, "A tool failed during the check: "+failedTools(r))
+	}
+	return a.finishTask(*verdict.Passed, verdict.Message)
+}
+
+// failedTools lists the remembered tool errors of a run.
+func failedTools(r *run) string {
+	return strings.Join(slices.Sorted(maps.Values(r.toolErrors)), "; ")
 }
 
 // finishTask ends the current task. No task starts after a failure, and none is left after the last one.

@@ -33,6 +33,7 @@ const (
 	StatusThinking
 	StatusTool          // a tool is about to run, and detail says which
 	StatusCreatingTasks // the model broke the request into tasks
+	StatusChecking      // a read_back check of a task is running
 )
 
 // statusText is the text shown for the status.
@@ -44,6 +45,8 @@ func (a Activity) statusText() string {
 		return a.detail
 	case StatusCreatingTasks:
 		return "creating todo list"
+	case StatusChecking:
+		return "checking the result"
 	}
 	return ""
 }
