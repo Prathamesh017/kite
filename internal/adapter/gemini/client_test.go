@@ -36,7 +36,7 @@ func TestCompleteSendsToolsAndReadsToolCalls(t *testing.T) {
 	if len(sent.Tools) != 1 || sent.Tools[0].Type != "function" || sent.Tools[0].Function.Name != "read_file" {
 		t.Errorf("tools sent = %+v, want one read_file function", sent.Tools)
 	}
-	if len(reply.ToolCalls) != 1 || reply.ToolCalls[0] != (core.ToolCall{ID: "c1", Name: "read_file", Arguments: `{"path":"main.go"}`}) {
+	if len(reply.ToolCalls) != 1 || reply.ToolCalls[0].ID != "c1" || reply.ToolCalls[0].Name != "read_file" || reply.ToolCalls[0].Arguments != `{"path":"main.go"}` {
 		t.Errorf("tool calls = %+v, want read_file c1", reply.ToolCalls)
 	}
 }

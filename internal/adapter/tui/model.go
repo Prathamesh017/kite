@@ -86,7 +86,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activity.status = StatusThinking
 			return m, askKite(m.kite, question)
 		}
-	case kiteReplyMsg:
+	case kiteStepMsg:
+		// The run is not finished yet, so ask for its next step.
+		if msg.err == nil && msg.result.Kind != core.Answered {
+			return m, runNextStep(m.kite)
+		}
 		question := m.activity.pending
 		m.chat.busy = false
 		m.activity.pending = ""
@@ -96,7 +100,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.activity.conversations = append(m.activity.conversations,
 				core.Message{Role: "user", Message: question},
-				core.Message{Role: "assistant", Message: msg.reply},
+				core.Message{Role: "assistant", Message: msg.result.Answer},
 			)
 		}
 	}

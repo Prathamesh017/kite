@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"kite/internal/core"
 )
@@ -33,8 +35,10 @@ func FromEnv() (Client, error) {
 }
 
 type message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []toolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
 type request struct {
@@ -57,10 +61,13 @@ type toolFunction struct {
 
 type toolCall struct {
 	ID       string `json:"id"`
+	Type     string `json:"type,omitempty"`
 	Function struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+	// ExtraContent holds Gemini's thought signature, which it expects back unchanged.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 type response struct {
@@ -75,7 +82,14 @@ type response struct {
 func (c Client) Complete(ctx context.Context, systemPrompt string, history []core.Message, specs []core.ToolSpec) (core.Message, error) {
 	messages := []message{{Role: "system", Content: systemPrompt}}
 	for _, m := range history {
-		messages = append(messages, message{Role: m.Role, Content: m.Message})
+		wire := message{Role: m.Role, Content: m.Message, ToolCallID: m.ToolCallID}
+		for _, call := range m.ToolCalls {
+			sent := toolCall{ID: call.ID, Type: "function", ExtraContent: call.ExtraContent}
+			sent.Function.Name = call.Name
+			sent.Function.Arguments = call.Arguments
+			wire.ToolCalls = append(wire.ToolCalls, sent)
+		}
+		messages = append(messages, wire)
 	}
 
 	var tools []tool
@@ -105,7 +119,9 @@ func (c Client) Complete(ctx context.Context, systemPrompt string, history []cor
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return core.Message{}, fmt.Errorf("model returned %d", res.StatusCode)
+		// The body says why the request was rejected, so keep the start of it.
+		detail, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return core.Message{}, fmt.Errorf("model returned %d: %s", res.StatusCode, strings.TrimSpace(string(detail)))
 	}
 
 	var reply response
@@ -119,9 +135,10 @@ func (c Client) Complete(ctx context.Context, systemPrompt string, history []cor
 	out := core.Message{Role: "assistant", Message: got.Content}
 	for _, call := range got.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, core.ToolCall{
-			ID:        call.ID,
-			Name:      call.Function.Name,
-			Arguments: call.Function.Arguments,
+			ID:           call.ID,
+			Name:         call.Function.Name,
+			Arguments:    call.Function.Arguments,
+			ExtraContent: call.ExtraContent,
 		})
 	}
 	return out, nil

@@ -30,9 +30,9 @@ func TestRunUnknownTool(t *testing.T) {
 	}
 }
 
-func TestSpecsListsReadFile(t *testing.T) {
+func TestSpecsListsTools(t *testing.T) {
 	specs := Tools{}.Specs()
-	if len(specs) != 1 || specs[0].Name != "read_file" {
-		t.Errorf("specs = %+v, want only read_file", specs)
+	if len(specs) != 3 || specs[0].Name != "list_files" || specs[1].Name != "read_file" || specs[2].Name != "write_file" {
+		t.Errorf("specs = %+v, want list_files, read_file and write_file", specs)
 	}
 }

@@ -8,18 +8,24 @@ import (
 	core "kite/internal/core"
 )
 
-// kiteReplyMsg is what comes back into Update when Kite has finished replying.
-type kiteReplyMsg struct {
-	reply string
-	err   error
+// kiteStepMsg is what comes back into Update after Ask or Step finished one step.
+type kiteStepMsg struct {
+	result core.Result
+	err    error
 }
 
-// askKite asks the core in the background so the UI does not freeze while it works.
+// askKite starts a run in the background so the UI does not freeze while it works.
 func askKite(kite core.Kite, question string) tea.Cmd {
 	return func() tea.Msg {
-		reply, err := kite.Ask(context.Background(), question)
+		result, err := kite.Ask(context.Background(), question)
+		return kiteStepMsg{result: result, err: err}
+	}
+}
 
-		//Here to need if it tool call or regular message
-		return kiteReplyMsg{reply: reply, err: err}
+// runNextStep does the next step of the running question in the background.
+func runNextStep(kite core.Kite) tea.Cmd {
+	return func() tea.Msg {
+		result, err := kite.Step(context.Background())
+		return kiteStepMsg{result: result, err: err}
 	}
 }

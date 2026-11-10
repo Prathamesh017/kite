@@ -6,5 +6,8 @@ import (
 
 // Kite is what the core offers to any interface that wants to use it.
 type Kite interface {
-	Ask(ctx context.Context, question string) (string, error)
+	// Ask starts a run for a question and does its first step.
+	Ask(ctx context.Context, question string) (Result, error)
+	// Step does the next step of the run. Call it until a result is Answered.
+	Step(ctx context.Context) (Result, error)
 }

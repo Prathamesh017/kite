@@ -15,13 +15,17 @@ var _ core.Tools = Tools{}
 type Tools struct{}
 
 func (Tools) Specs() []core.ToolSpec {
-	return []core.ToolSpec{readFileSpec}
+	return []core.ToolSpec{listFilesSpec, readFileSpec, writeFileSpec}
 }
 
 func (Tools) Run(_ context.Context, name, arguments string) string {
 	switch name {
+	case "list_files":
+		return listFiles(arguments)
 	case "read_file":
 		return readFile(arguments)
+	case "write_file":
+		return writeFile(arguments)
 	}
 	return "error: unknown tool " + name
 }
