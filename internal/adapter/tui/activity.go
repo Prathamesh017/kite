@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"github.com/charmbracelet/lipgloss"
 	"kite/internal/core"
 	"strings"
@@ -10,12 +11,17 @@ import (
 // conversations is the UI's own list of what is shown. It is filled when a reply arrives.
 // pending is the question sent but not answered yet. It is shown after the
 // conversation, because a question joins the list only once it was answered.
+// steps are the tool lines of the run in progress. They are shown after pending
+// and join the conversation, between the question and the answer, when the answer arrives.
 // status says what Kite is doing now, like "thinking". It is only a marker while
-// waiting, not part of the conversation. frame moves the shimmer along it.
+// waiting, not part of the conversation. detail is the text of StatusTool.
+// frame moves the shimmer along the status.
 type Activity struct {
 	conversations []core.Message
 	pending       string
+	steps         []core.Message
 	status        Status
+	detail        string
 	frame         int
 }
 
@@ -25,15 +31,40 @@ type Status int
 const (
 	StatusIdle Status = iota
 	StatusThinking
+	StatusTool // a tool is about to run, and detail says which
 )
 
-// label is the text shown for the status.
-func (s Status) label() string {
-	switch s {
+// statusText is the text shown for the status.
+func (a Activity) statusText() string {
+	switch a.status {
 	case StatusThinking:
 		return "thinking"
+	case StatusTool:
+		return a.detail
 	}
 	return ""
+}
+
+// toolStatus words what the tools are doing, like "reading main.go".
+func toolStatus(calls []core.ToolCall) string {
+	parts := make([]string, 0, len(calls))
+	for _, call := range calls {
+		var args struct {
+			Path string `json:"path"`
+		}
+		_ = json.Unmarshal([]byte(call.Arguments), &args)
+		switch call.Name {
+		case "read_file":
+			parts = append(parts, "reading "+args.Path)
+		case "write_file":
+			parts = append(parts, "writing "+args.Path)
+		case "list_files":
+			parts = append(parts, "listing files")
+		default:
+			parts = append(parts, "using "+call.Name)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // Shimmer moves the highlight one step, only while there is a status to show.
@@ -66,8 +97,11 @@ func (a Activity) rows(width, height int) (rows []string, room int) {
 	if a.pending != "" {
 		rows = append(rows, row("user", a.pending, textW)...)
 	}
+	for _, step := range a.steps {
+		rows = append(rows, row(step.Role, step.Message, textW)...)
+	}
 	if a.status != StatusIdle {
-		rows = append(rows, shimmer("> "+a.status.label()+"...", a.frame))
+		rows = append(rows, shimmer("> "+a.statusText()+"...", a.frame))
 	}
 	return rows, room
 }
@@ -93,7 +127,11 @@ func shimmer(text string, frame int) string {
 
 // row is one message wrapped to the pane width.
 func row(role, text string, width int) []string {
-	rendered := lipgloss.NewStyle().Width(width).Render(marker(role) + "  " + text)
+	line := marker(role) + "  " + text
+	if role == "tool" {
+		line = mutedStyle.Render("> using tool call - " + text)
+	}
+	rendered := lipgloss.NewStyle().Width(width).Render(line)
 	return strings.Split(rendered, "\n")
 }
 

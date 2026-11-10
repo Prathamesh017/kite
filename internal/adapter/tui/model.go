@@ -87,21 +87,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, askKite(m.kite, question)
 		}
 	case kiteStepMsg:
-		// The run is not finished yet, so ask for its next step.
+		// The run is not finished yet, so show what happened and ask for its next step.
 		if msg.err == nil && msg.result.Kind != core.Answered {
+			switch msg.result.Kind {
+			case core.AskedForTool:
+				m.activity.status = StatusTool
+				m.activity.detail = toolStatus(msg.result.Tools)
+			case core.ToolRan:
+				for _, call := range msg.result.Tools {
+					m.activity.steps = append(m.activity.steps, core.Message{Role: "tool", Message: call.Name})
+				}
+				m.activity.status = StatusThinking
+			}
 			return m, runNextStep(m.kite)
 		}
 		question := m.activity.pending
+		steps := m.activity.steps
 		m.chat.busy = false
 		m.activity.pending = ""
+		m.activity.steps = nil
 		m.activity.status = StatusIdle
 		if msg.err != nil {
 			m.chat.Restore(question, msg.err.Error())
 		} else {
-			m.activity.conversations = append(m.activity.conversations,
-				core.Message{Role: "user", Message: question},
-				core.Message{Role: "assistant", Message: msg.result.Answer},
-			)
+			m.activity.conversations = append(m.activity.conversations, core.Message{Role: "user", Message: question})
+			m.activity.conversations = append(m.activity.conversations, steps...)
+			m.activity.conversations = append(m.activity.conversations, core.Message{Role: "assistant", Message: msg.result.Answer})
 		}
 	}
 
