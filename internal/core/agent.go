@@ -7,6 +7,8 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
+	"time"
 )
 
 type Agent struct {
@@ -19,10 +21,12 @@ type Agent struct {
 // run is the state of one stretch of back and forth with the model: a question,
 // or one task of a question. It is created fresh, so the counters always start at 0.
 type run struct {
-	messages       []Message  // what is sent to the model: for a question the history and everything since, for a task its own messages
-	toolCallsToRun []ToolCall // tool calls the model asked for that have not run yet
-	iterations     int        // model replies that asked for tools in this run
-	toolCalls      int        // tools run in this run
+	messages       []Message     // what is sent to the model: for a question the history and everything since, for a task its own messages
+	toolCallsToRun []ToolCall    // tool calls the model asked for that have not run yet
+	iterations     int           // model replies that asked for tools in this run
+	toolCalls      int           // tools run in this run
+	retries        int           // times the current request failed and was sent again
+	retryWait      time.Duration // how long the next request waits before it is sent again
 
 	// Only in a question the model broke into tasks.
 	tasks    []taskRow // every task, with its status and reply
@@ -93,12 +97,20 @@ func envInt(key string, fallback int) int {
 
 // askModel sends the question's messages to the model and reports what it replied.
 func (a *Agent) askModel(ctx context.Context) (Result, error) {
+	if err := waitToRetry(ctx, a.run); err != nil {
+		a.run = nil
+		return Result{}, err
+	}
 	reply, err := a.llm.Complete(ctx, SystemPrompt+"\n\n"+ReplyPrompt, a.run.messages, a.tools.Specs(), replyFormat)
 	if err != nil {
+		if result, ok := retryLater(ctx, a.run, err); ok {
+			return result, nil
+		}
 		// The run is dropped and the history is untouched, so a failed question never enters it.
 		a.run = nil
 		return Result{}, err
 	}
+	a.run.retries = 0
 	mode, parsed := parseReply(reply)
 
 	switch mode {
@@ -108,13 +120,18 @@ func (a *Agent) askModel(ctx context.Context) (Result, error) {
 		a.run.toolCallsToRun = reply.ToolCalls
 		return Result{Kind: AskedForTool, Tools: reply.ToolCalls}, nil
 	case ModeTask:
+		if existing := a.existingFiles(ctx, parsed.Tasks); len(existing) > 0 {
+			return a.stop("Not started: " + strings.Join(existing, ", ") +
+				" already exists, and Kite can only create new files."), nil
+		}
 		a.run.tasks = newTaskRows(parsed.Tasks)
 		return Result{Kind: TasksCreated, Tasks: parsed.Tasks}, nil
 	case ModeAnswer:
 		// The history keeps the answer, not the JSON around it.
-		a.history = append(a.run.messages, Message{Role: "assistant", Message: parsed.Answer})
+		answer := markCutOff(parsed.Answer, reply.Truncated)
+		a.history = append(a.run.messages, Message{Role: "assistant", Message: answer})
 		a.run = nil
-		return Result{Kind: Answered, Answer: parsed.Answer}, nil
+		return Result{Kind: Answered, Answer: answer}, nil
 	}
 	return Result{}, fmt.Errorf("unknown reply mode %d", mode)
 }

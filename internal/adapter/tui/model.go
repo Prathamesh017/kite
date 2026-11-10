@@ -103,6 +103,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case shimmerTickMsg:
 		m.activity.Shimmer()
 		return m, tickShimmer()
+	case tea.MouseMsg:
+		// The wheel only scrolls when the pointer is over the activity pane.
+		if !m.overActivity(msg.X, msg.Y) {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			m.scrollActivity(-wheelStep)
+		case tea.MouseButtonWheelDown:
+			m.scrollActivity(wheelStep)
+		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -114,6 +125,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+t":
 			m.setTheme((m.theme + 1) % len(themes))
+			return m, nil
+		case "up", "down":
+			delta := 1
+			if msg.String() == "up" {
+				delta = -1
+			}
+			m.scrollActivity(delta)
 			return m, nil
 		}
 		//checking and sending to core
@@ -147,6 +165,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.activity.status = StatusThinking
 			case core.TaskChecking:
 				m.activity.status = StatusChecking
+			case core.Retrying:
+				m.activity.status = StatusRetrying
 			case core.TaskFinished:
 				m.tasks.Finish(msg.result.Task, msg.result.Passed)
 				if msg.result.Passed {

@@ -16,6 +16,9 @@ import (
 // status says what Kite is doing now, like "thinking". It is only a marker while
 // waiting, not part of the conversation. detail is the text of StatusTool.
 // frame moves the shimmer along the status.
+//
+// top is the first visible row while scrolledUp is true. When scrolledUp is
+// false the pane follows the bottom, so new messages come into view.
 type Activity struct {
 	conversations []core.Message
 	pending       string
@@ -23,6 +26,8 @@ type Activity struct {
 	status        Status
 	detail        string
 	frame         int
+	top           int
+	scrolledUp    bool
 }
 
 // Status is what Kite is doing while it waits. Idle means nothing to show.
@@ -34,6 +39,7 @@ const (
 	StatusTool          // a tool is about to run, and detail says which
 	StatusCreatingTasks // the model broke the request into tasks
 	StatusChecking      // a read_back check of a task is running
+	StatusRetrying      // a request failed and is being sent again
 )
 
 // statusText is the text shown for the status.
@@ -47,6 +53,8 @@ func (a Activity) statusText() string {
 		return "creating todo list"
 	case StatusChecking:
 		return "checking the result"
+	case StatusRetrying:
+		return "retrying"
 	}
 	return ""
 }
@@ -80,11 +88,30 @@ func (a *Activity) Shimmer() {
 	}
 }
 
+// Scroll moves the view by delta rows. Negative is up. width and height are the
+// pane's outer size, needed to know how many rows the conversation wraps into.
+func (a *Activity) Scroll(delta, width, height int) {
+	rows, room := a.rows(width, height)
+	maxTop := max(0, len(rows)-room)
+
+	top := a.top
+	if !a.scrolledUp {
+		top = maxTop
+	}
+	top = min(max(top+delta, 0), maxTop)
+
+	a.top = top
+	a.scrolledUp = top < maxTop
+}
+
 func (a Activity) View(width, height int) string {
 	rows, room := a.rows(width, height)
 	maxTop := max(0, len(rows)-room)
 
 	top := maxTop
+	if a.scrolledUp {
+		top = min(a.top, maxTop)
+	}
 	visible := rows[top:min(top+room, len(rows))]
 
 	out := make([]string, 0, 1+len(visible))

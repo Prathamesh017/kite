@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"kite/internal/core"
 )
@@ -21,7 +20,6 @@ type Client struct {
 	model string
 	url   string
 	http  *http.Client // nil means http.DefaultClient
-	retry retry
 }
 
 func FromEnv() (Client, error) {
@@ -30,7 +28,6 @@ func FromEnv() (Client, error) {
 		model: os.Getenv("TEXT_MODEL_NAME"),
 		url:   os.Getenv("API_URL"),
 		http:  &http.Client{Timeout: requestTimeout()},
-		retry: retryFromEnv(),
 	}
 	if c.key == "" || c.model == "" || c.url == "" {
 		return Client{}, errors.New("set API_KEY, TEXT_MODEL_NAME, and API_URL in .env")
@@ -90,6 +87,7 @@ type response struct {
 			Content   string     `json:"content"`
 			ToolCalls []toolCall `json:"tool_calls"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 }
 
@@ -127,16 +125,6 @@ func (c Client) Complete(ctx context.Context, systemPrompt string, history []cor
 	}
 
 	reply, err := c.send(ctx, body)
-	// A failure that might pass is sent again, up to the retry count, waiting a
-	// little longer each time. It stops early when the error cannot be retried.
-	for attempt := 0; err != nil && retryable(err) && attempt < c.retry.count; attempt++ {
-		select {
-		case <-ctx.Done():
-			return core.Message{}, ctx.Err()
-		case <-time.After(randomUpTo(backoff(attempt, c.retry))):
-		}
-		reply, err = c.send(ctx, body)
-	}
 	if err != nil {
 		return core.Message{}, err
 	}
@@ -144,7 +132,7 @@ func (c Client) Complete(ctx context.Context, systemPrompt string, history []cor
 		return core.Message{}, errors.New("model returned an empty reply")
 	}
 	got := reply.Choices[0].Message
-	out := core.Message{Role: "assistant", Message: got.Content}
+	out := core.Message{Role: "assistant", Message: got.Content, Truncated: reply.Choices[0].FinishReason == "length"}
 	for _, call := range got.ToolCalls {
 		out.ToolCalls = append(out.ToolCalls, core.ToolCall{
 			ID:           call.ID,

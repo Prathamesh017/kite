@@ -67,12 +67,26 @@ const (
 	ModeTask                 // the model broke the request into tasks
 )
 
+// cutOffNote is added to a reply the model cut off at its length limit.
+const cutOffNote = "\n\nThe reply was cut off because it hit the model's length limit."
+
+func markCutOff(answer string, truncated bool) string {
+	if truncated {
+		return answer + cutOffNote
+	}
+	return answer
+}
+
 // parseReply says what the model's reply is. For ModeAnswer and ModeTask the
 // returned Reply holds the answer or the tasks. A reply that is not in the JSON
-// shape is an answer, and comes back as it is.
+// shape is an answer, and comes back as it is. A reply that was cut off is never
+// tasks, because its list may be incomplete.
 func parseReply(reply Message) (Mode, Reply) {
 	if len(reply.ToolCalls) > 0 {
 		return ModeToolCall, Reply{}
+	}
+	if reply.Truncated {
+		return ModeAnswer, Reply{Answer: reply.Message}
 	}
 
 	var parsed Reply

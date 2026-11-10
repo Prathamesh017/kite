@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -29,6 +31,36 @@ func newTaskRows(tasks []Task) []taskRow {
 		rows[i] = taskRow{task: task, status: taskPending}
 	}
 	return rows
+}
+
+// existingFiles lists the files the tasks will create that already exist, so the
+// run can be refused before it starts. It asks the tools for every file in the
+// workspace once. If that fails, nothing is refused.
+func (a *Agent) existingFiles(ctx context.Context, tasks []Task) []string {
+	var wanted []string
+	for _, task := range tasks {
+		wanted = append(wanted, task.Creates...)
+	}
+	if len(wanted) == 0 {
+		return nil
+	}
+
+	listing := a.tools.Run(ctx, "list_files", "{}")
+	if strings.HasPrefix(listing, "error:") {
+		return nil
+	}
+	present := map[string]bool{}
+	for _, line := range strings.Split(listing, "\n") {
+		present[path.Clean(filepath.ToSlash(line))] = true
+	}
+
+	var existing []string
+	for _, file := range wanted {
+		if present[path.Clean(filepath.ToSlash(file))] && !slices.Contains(existing, file) {
+			existing = append(existing, file)
+		}
+	}
+	return existing
 }
 
 // stepTasks does the next step of a question the model broke into tasks.
@@ -81,6 +113,10 @@ func (a *Agent) stepTask(ctx context.Context) (Result, error) {
 	if r.checking {
 		format = verdictFormat
 	}
+	if err := waitToRetry(ctx, r); err != nil {
+		a.run = nil
+		return Result{}, err
+	}
 	reply, err := a.llm.Complete(ctx, SystemPrompt, r.messages, a.tools.Specs(), format)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -88,8 +124,12 @@ func (a *Agent) stepTask(ctx context.Context) (Result, error) {
 			a.run = nil
 			return Result{}, err
 		}
+		if result, ok := retryLater(ctx, r, err); ok {
+			return result, nil
+		}
 		return a.finishTask(false, "The request failed: "+err.Error()), nil
 	}
+	r.retries = 0
 	if len(reply.ToolCalls) > 0 {
 		r.iterations++
 		r.messages = append(r.messages, reply)
@@ -101,7 +141,7 @@ func (a *Agent) stepTask(ctx context.Context) (Result, error) {
 	if r.checking {
 		return a.judgeCheck(r, reply.Message), nil
 	}
-	return a.judgeTask(r, reply.Message), nil
+	return a.judgeTask(r, markCutOff(reply.Message, reply.Truncated)), nil
 }
 
 // judgeTask decides whether a task passed, from the model's plain reply and the task's verification policy.

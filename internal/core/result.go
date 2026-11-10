@@ -11,6 +11,7 @@ const (
 	TaskStarted              // a task begins
 	TaskChecking             // the task's reply is accepted, and a read_back check of its files begins
 	TaskFinished             // a task ended, passed or failed
+	Retrying                 // a request failed in a way that may pass, and the next step sends it again
 )
 
 // Result is what Ask and Step report. The run is finished when Kind is Answered.

@@ -21,6 +21,7 @@ type Message struct {
 	Message    string
 	ToolCalls  []ToolCall // set when the model asks to run tools instead of answering
 	ToolCallID string     // set on a "tool" message: the call it answers
+	Truncated  bool       // set on a reply the model cut off at its length limit
 }
 type ReplyFormat struct {
 	Name   string

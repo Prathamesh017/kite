@@ -9,7 +9,20 @@ const (
 
 	// minBodyHeight keeps the middle band visible when the window is short.
 	minBodyHeight = 5
+
+	// wheelStep is how many rows one wheel notch scrolls the activity pane.
+	wheelStep = 3
 )
+
+func (m *Model) scrollActivity(delta int) {
+	m.activity.Scroll(delta, m.width, m.activityHeight())
+}
+
+// overActivity reports whether a mouse position falls inside the activity pane.
+func (m Model) overActivity(x, y int) bool {
+	headerH, _, _ := splitHeight(m.height)
+	return x < m.width && y >= headerH && y < headerH+m.activityHeight()
+}
 
 // activityHeight is the middle band, less the task list while there are tasks.
 // The list takes at most half the band, so Activity stays readable.
