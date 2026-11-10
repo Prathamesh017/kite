@@ -1,26 +1,25 @@
 package main
 
 import (
-	"fmt"
+	gemini "kite/internal/adapter/gemini"
+	tools "kite/internal/adapter/tools"
+	tui "kite/internal/adapter/tui"
+	core "kite/internal/core"
 	"os"
 	"strings"
-
-	tea "github.com/charmbracelet/bubbletea"
-
-	"kite/internal/tui"
 )
 
 func main() {
-	// A missing .env is fine. The chat reports it when a question is asked.
+	// A missing .env is fine. FromEnv reports any variable that is still missing.
 	loadEnv(".env")
 
-	// The alt screen lets the layout own the whole terminal.
-	// Mouse events are on for the wheel. Selecting text then needs Option+drag on macOS.
-	p := tea.NewProgram(tui.New(), tea.WithAltScreen(), tea.WithMouseCellMotion())
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "kite: %v\n", err)
-		os.Exit(1)
+	geminiClient, err := gemini.FromEnv()
+	if err != nil {
+		panic(err)
 	}
+	//here it satisfied as geminiClient has implemented the core.LLM interface  as it has complete method
+	kite := core.NewAgent(geminiClient, tools.Tools{})
+	tui.Init(kite)
 }
 
 // loadEnv copies KEY=VALUE lines from path into the environment.

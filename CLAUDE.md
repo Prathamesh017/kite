@@ -1,9 +1,11 @@
 # Kite
 
-A coding agent built from scratch, one capability at a time (`docs/roadmap.md`). It is being refactored to hexagonal architecture (ports and adapters).
+A coding agent built from scratch, one capability at a time (`docs/roadmap.md`). It follows hexagonal architecture (ports and adapters).
 
-- New code: `cmd/kite-v2`, `internal/core`, `internal/adapter/{tui,gemini,tools}`. Run it with `task run-v2`.
-- Old code: `internal/tui`, `internal/llm`, `internal/tools`, `cmd/main.go`. It stays until v2 behaves the same, and is then deleted.
+- `cmd/main.go`: the entry point. It loads `.env`, builds the adapters, and hands them to the core. Run it with `task run`.
+- `internal/core`: the agent. It knows no UI and no provider.
+- `internal/adapter/{tui,gemini,tools}`: the terminal UI, the Gemini client, and the file tools.
+- The earlier version of the app (before the refactor) was deleted. It is in git history.
 
 ## Read first
 

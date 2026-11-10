@@ -30,7 +30,7 @@ Sleep 500ms
 Enter
 Sleep 12s
 
-Type "first read cmd/main.go, then read internal/tui/loop.go, then write a short summary of both to notes.md"
+Type "first read cmd/main.go, then read internal/core/agent.go, then write a short summary of both to notes.md"
 Sleep 500ms
 Enter
 # Waits for the summary after the last task instead of a fixed time. A run times out at 1 minute.
