@@ -10,7 +10,12 @@ import (
 )
 
 // Task statuses shown in the list.
-const taskPending = "pending"
+const (
+	taskPending = "pending"
+	taskRunning = "running"
+	taskPassed  = "passed"
+	taskFailed  = "failed"
+)
 
 // TaskList shows the tasks the model broke the request into, each with its
 // status. It sits below Activity and is cleared when the run ends.
@@ -28,6 +33,17 @@ func (t *TaskList) Start(tasks []core.Task) {
 	t.rows = make([]taskRow, len(tasks))
 	for i, task := range tasks {
 		t.rows[i] = taskRow{task: task, status: taskPending}
+	}
+}
+
+func (t *TaskList) Running(i int) {
+	t.rows[i].status = taskRunning
+}
+
+func (t *TaskList) Finish(i int, passed bool) {
+	t.rows[i].status = taskFailed
+	if passed {
+		t.rows[i].status = taskPassed
 	}
 }
 
@@ -49,8 +65,20 @@ func (t TaskList) View(width, height int) string {
 
 	out := []string{titleStyle.Render("Tasks")}
 	for i, row := range t.rows {
-		text := fmt.Sprintf("%s  %d. %s", mutedStyle.Render(fmt.Sprintf("%-7s", row.status)), i+1, row.task.Description)
+		text := fmt.Sprintf("%s  %d. %s", taskStatusStyle(row.status).Render(fmt.Sprintf("%-7s", row.status)), i+1, row.task.Description)
 		out = append(out, line.Render(text))
 	}
 	return box(strings.Join(out, "\n"), width, height)
+}
+
+func taskStatusStyle(status string) lipgloss.Style {
+	switch status {
+	case taskRunning:
+		return titleStyle
+	case taskPassed:
+		return readyStyle
+	case taskFailed:
+		return brandStyle
+	}
+	return mutedStyle
 }

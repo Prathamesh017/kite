@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -141,6 +142,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case core.TasksCreated:
 				m.tasks.Start(msg.result.Tasks)
 				m.activity.status = StatusCreatingTasks
+			case core.TaskStarted:
+				m.tasks.Running(msg.result.Task)
+				m.activity.status = StatusThinking
+			case core.TaskFinished:
+				m.tasks.Finish(msg.result.Task, msg.result.Passed)
+				if msg.result.Passed {
+					m.activity.steps = append(m.activity.steps, core.Message{Role: "note", Message: fmt.Sprintf("task %d completed", msg.result.Task+1)})
+				}
 			}
 			return m, runNextStep(m.runCtx, m.kite)
 		}

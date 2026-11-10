@@ -16,14 +16,22 @@ type Agent struct {
 	run     *run      // the question being answered, nil when there is none
 }
 
-// run is the state of one question, from Ask until the answer. Ask creates it
-// fresh, so the counters always start at 0.
+// run is the state of one stretch of back and forth with the model: a question,
+// or one task of a question. It is created fresh, so the counters always start at 0.
 type run struct {
-	messages       []Message  // the history, this question, and everything since
+	messages       []Message  // what is sent to the model: for a question the history and everything since, for a task its own messages
 	toolCallsToRun []ToolCall // tool calls the model asked for that have not run yet
-	tasks          []Task     // the tasks the model broke the request into
 	iterations     int        // model replies that asked for tools in this run
 	toolCalls      int        // tools run in this run
+
+	// Only in a question the model broke into tasks.
+	tasks    []taskRow // every task, with its status and reply
+	current  int       // the task being run, or the next one to start
+	task     *run      // the current task's own run, nil between tasks
+	finished bool      // no task is left to start: the last one ran, or one failed
+
+	// Only in a task's own run.
+	toolErrors map[string]string // the last error result of each tool, cleared by a later success
 }
 
 func NewAgent(llm LLM, tools Tools) *Agent {
@@ -45,9 +53,8 @@ func (a *Agent) Step(ctx context.Context) (Result, error) {
 	if a.run == nil {
 		return Result{}, errors.New("no question is being answered")
 	}
-	if len(a.run.tasks) > 0 {
-		// Running the tasks is not built yet, so the run ends here.
-		return a.stop(fmt.Sprintf("The model split the request into %d tasks. Running tasks is not built yet.", len(a.run.tasks))), nil
+	if a.run.tasks != nil {
+		return a.stepTasks(ctx)
 	}
 	if len(a.run.toolCallsToRun) > 0 {
 		if len(a.run.toolCallsToRun) > toolCallLimit()-a.run.toolCalls {
@@ -55,7 +62,7 @@ func (a *Agent) Step(ctx context.Context) (Result, error) {
 			a.run.messages = a.run.messages[:len(a.run.messages)-1]
 			return a.stop("Reached its tool-call limit. The task may be partially complete."), nil
 		}
-		return a.runTools(ctx), nil
+		return a.runTools(ctx, a.run), nil
 	}
 	if a.run.iterations >= iterationLimit() {
 		return a.stop("Reached its execution-step limit before completing the task."), nil
@@ -83,7 +90,7 @@ func envInt(key string, fallback int) int {
 	return fallback
 }
 
-// askModel sends the run's messages to the model and reports what it replied.
+// askModel sends the question's messages to the model and reports what it replied.
 func (a *Agent) askModel(ctx context.Context) (Result, error) {
 	reply, err := a.llm.Complete(ctx, SystemPrompt+"\n\n"+ReplyPrompt, a.run.messages, a.tools.Specs(), replyFormat)
 	if err != nil {
@@ -100,7 +107,7 @@ func (a *Agent) askModel(ctx context.Context) (Result, error) {
 		a.run.toolCallsToRun = reply.ToolCalls
 		return Result{Kind: AskedForTool, Tools: reply.ToolCalls}, nil
 	case ModeTask:
-		a.run.tasks = parsed.Tasks
+		a.run.tasks = newTaskRows(parsed.Tasks)
 		return Result{Kind: TasksCreated, Tasks: parsed.Tasks}, nil
 	case ModeAnswer:
 		// The history keeps the answer, not the JSON around it.
@@ -111,15 +118,18 @@ func (a *Agent) askModel(ctx context.Context) (Result, error) {
 	return Result{}, fmt.Errorf("unknown reply mode %d", mode)
 }
 
-// runTools runs the tool calls the model asked for. Each call gets a result
+// runTools runs the tool calls the model asked for in r. Each call gets a result
 // carrying its ID, because the model expects one answer per request.
-func (a *Agent) runTools(ctx context.Context) Result {
-	calls := a.run.toolCallsToRun
+func (a *Agent) runTools(ctx context.Context, r *run) Result {
+	calls := r.toolCallsToRun
 	for _, call := range calls {
 		result := a.tools.Run(ctx, call.Name, call.Arguments)
-		a.run.messages = append(a.run.messages, Message{Role: "tool", Message: result, ToolCallID: call.ID})
+		r.messages = append(r.messages, Message{Role: "tool", Message: result, ToolCallID: call.ID})
+		if r.toolErrors != nil {
+			recordToolError(r.toolErrors, call.Name, result)
+		}
 	}
-	a.run.toolCalls += len(calls)
-	a.run.toolCallsToRun = nil
+	r.toolCalls += len(calls)
+	r.toolCallsToRun = nil
 	return Result{Kind: ToolRan, Tools: calls}
 }

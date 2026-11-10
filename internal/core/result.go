@@ -8,6 +8,8 @@ const (
 	ToolRan                  // the tools ran, and their results wait for the next model call
 	Answered                 // the model gave its answer, the run is finished
 	TasksCreated             // the model broke the request into tasks
+	TaskStarted              // a task begins
+	TaskFinished             // a task ended, passed or failed
 )
 
 // Result is what Ask and Step report. The run is finished when Kind is Answered.
@@ -17,4 +19,6 @@ type Result struct {
 	Tools  []ToolCall // AskedForTool: the calls the model asked for. ToolRan: the calls that ran.
 	Answer string     // Answered: the answer text
 	Tasks  []Task     // TasksCreated: the tasks, in the order they will run
+	Task   int        // TaskStarted, TaskFinished: which task, counting from 0
+	Passed bool       // TaskFinished: whether the task passed
 }

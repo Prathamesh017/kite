@@ -131,8 +131,11 @@ func shimmer(text string, frame int) string {
 // row is one message wrapped to the pane width.
 func row(role, text string, width int) []string {
 	line := marker(role) + "  " + text
-	if role == "tool" {
+	switch role {
+	case "tool":
 		line = mutedStyle.Render("> using tool call - " + text)
+	case "note":
+		line = mutedStyle.Render("> " + text)
 	}
 	rendered := lipgloss.NewStyle().Width(width).Render(line)
 	return strings.Split(rendered, "\n")
